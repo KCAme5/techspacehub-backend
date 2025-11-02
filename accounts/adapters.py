@@ -1,0 +1,28 @@
+# accounts/adapters.py
+from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.shortcuts import redirect
+from urllib.parse import urlencode
+import logging
+
+logger = logging.getLogger("accounts")
+
+
+class CustomSocialAccountAdapter(DefaultSocialAccountAdapter):
+    def get_login_redirect_url(self, request):
+        logger.info("CustomSocialAccountAdapter.get_login_redirect_url called")
+        logger.info(
+            f"User: {request.user}, Authenticated: {request.user.is_authenticated}"
+        )
+
+        # Generate JWT tokens
+        refresh = RefreshToken.for_user(request.user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        # Build frontend URL with tokens
+        params = urlencode({"access": access_token, "refresh": refresh_token})
+        frontend_url = f"http://localhost:5173/oauth2/redirect?{params}"
+
+        logger.info(f"Redirecting to: {frontend_url}")
+        return frontend_url
