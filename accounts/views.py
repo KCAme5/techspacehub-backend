@@ -123,21 +123,27 @@ class LoginView(APIView):
     throttle_scope = "login"
     throttle_classes = [ScopedRateThrottle]
 
+    def _get_client_ip(self, request):
+        ip = request.META.get("HTTP_X_FORWARDED_FOR")
+        if ip:
+            ip = ip.split(",")[0].strip()
+        else:
+            ip = request.META.get("REMOTE_ADDR")
+        return ip
+
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data["user"]
 
         # Log request details
-        ip = request.META.get("HTTP_X_FORWARDED_FOR", "") or request.META.get(
-            "REMOTE_ADDR"
-        )
+        ip = self._get_client_ip(request)
         user_agent = request.META.get("HTTP_USER_AGENT", "")[:512]
 
-        # reset failed attempts on success
+        # Reset failed attempts on success
         user.reset_login_attempts()
 
-        # create login attempt (success)
+        # Create login attempt (success)
         LoginAttempt.objects.create(
             user=user,
             email=user.email,
@@ -159,20 +165,16 @@ class LoginView(APIView):
         )
 
     def handle_exception(self, exc):
-        # For authentication failures we still want to log the attempt
         request = self.request
-        # attempt to get email if present
         email = request.data.get("email")
-        ip = request.META.get("HTTP_X_FORWARDED_FOR", "") or request.META.get(
-            "REMOTE_ADDR"
-        )
+        ip = self._get_client_ip(request)
         user_agent = request.META.get("HTTP_USER_AGENT", "")[:512]
-        # find user object (may not exist)
+
         user = None
         if email:
             user = User.objects.filter(email=email).first()
 
-        # record failed attempt
+        # Record failed attempt
         LoginAttempt.objects.create(
             user=user,
             email=email,
@@ -182,7 +184,7 @@ class LoginView(APIView):
             failure_reason=str(exc),
         )
 
-        # increment failed attempts if user exists
+        # Increment failed attempts if user exists
         if user:
             user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
             user.last_failed_login = timezone.now()

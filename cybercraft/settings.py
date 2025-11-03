@@ -54,7 +54,7 @@ INSTALLED_APPS = [
     "chat",
     "labs",
     "billing",
-    "live_classes",  # Fixed typo: was "live-classes"
+    "live_classes",
 ]
 
 SITE_ID = 1
