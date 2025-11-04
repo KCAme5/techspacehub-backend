@@ -6,6 +6,7 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 import dj_database_url
+from datetime import timedelta
 
 load_dotenv()
 
@@ -15,14 +16,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "generate-a-strong-key-here-for-now")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-# Allowed hosts for production
+# Allowed hosts - production
 RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS = [RENDER_EXTERNAL_HOSTNAME, "localhost", "127.0.0.1"]
 else:
     ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
-# Frontend/Backend URLs - Use environment variables
+# Frontend/Backend URLs
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://cybercraft-frontend.vercel.app")
 BACKEND_URL = os.getenv("BACKEND_URL", "https://cybercraft-back.onrender.com")
 
@@ -46,7 +47,7 @@ INSTALLED_APPS = [
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
     "allauth.socialaccount.providers.github",
-    # Local apps
+    # my apps
     "accounts",
     "courses",
     "library",
@@ -139,7 +140,7 @@ AUTHENTICATION_BACKENDS = (
 )
 
 # Allauth settings
-ACCOUNT_EMAIL_VERIFICATION = "mandatory"  # Changed to mandatory for email verification
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USERNAME_REQUIRED = False
@@ -208,14 +209,20 @@ SOCIALACCOUNT_PROVIDERS = {
         "OAUTH_PKCE_ENABLED": True,
     }
 }
-
-# Email settings (Console for now - we'll fix email verification links)
+# JWT Settings for longer token expiration
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=4),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=3),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+}
+# Email settings
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 DEFAULT_FROM_EMAIL = "noreply@cybercraft.com"
 
 # File upload limits
-DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 
 # Security
 if not DEBUG:
@@ -224,9 +231,9 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"  # Changed to https for production
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
 
-# API Keys
+# API
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Payment configurations
