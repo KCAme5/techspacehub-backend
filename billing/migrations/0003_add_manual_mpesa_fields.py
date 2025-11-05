@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
                     ("stripe", "Stripe"),
                     ("manual_mpesa", "Manual M-Pesa"),
                 ],
-                max_length=10,
+                max_length=15,
             ),
         ),
         migrations.AddField(
