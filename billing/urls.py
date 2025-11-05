@@ -7,6 +7,7 @@ from .views import (
     InitiateMpesaPayment,
     PaymentStatusView,
     ChoosePlanEnrollView,
+    InitiateManualMpesaPayment,
 )
 
 urlpatterns = [
@@ -20,6 +21,11 @@ urlpatterns = [
     path("verify/stripe/", VerifyStripePayment.as_view(), name="verify-stripe-payment"),
     path(
         "initiate/mpesa/", InitiateMpesaPayment.as_view(), name="initiate-mpesa-payment"
+    ),
+    path(
+        "initiate/manual-mpesa/",
+        InitiateManualMpesaPayment.as_view(),
+        name="initiate-manual-mpesa",
     ),
     path(
         "status/<str:checkout_request_id>/",

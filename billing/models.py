@@ -9,6 +9,7 @@ class Payment(models.Model):
     METHOD_CHOICES = [
         ("mpesa", "M-Pesa"),
         ("stripe", "Stripe"),
+        ("manual_mpesa", "Manual M-Pesa"),
     ]
     STATUS_CHOICES = [
         ("pending", "Pending"),
@@ -28,6 +29,9 @@ class Payment(models.Model):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    mpesa_receipt = models.CharField(max_length=255, blank=True, null=True)
+    admin_notes = models.TextField(blank=True, null=True)
 
     def __str__(self):
         return f"{self.user} - {self.week} ({self.method}) [{self.status}]"

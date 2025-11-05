@@ -414,37 +414,6 @@ class Progress(models.Model):
         return f"{self.user} - {self.lesson.title}"
 
 
-"""class WeeklyProgress(models.Model):
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="weekly_progress",
-    )
-    week = models.ForeignKey(
-        Week, on_delete=models.CASCADE, related_name="weekly_progress"
-    )
-    lessons_completed = models.PositiveIntegerField(default=0)
-    total_lessons = models.PositiveIntegerField(default=0)
-    quiz_completed = models.BooleanField(default=False)
-    project_completed = models.BooleanField(default=False)
-    week_completed = models.BooleanField(default=False)
-    completed_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        unique_together = ["user", "week"]
-        verbose_name_plural = "Weekly progress"
-
-    def __str__(self):
-        return f"{self.user} - {self.week} - Progress"
-
-    @property
-    def completion_percentage(self):
-        if self.total_lessons == 0:
-            return 0
-        return (self.lessons_completed / self.total_lessons) * 100
-"""
-
-
 class WeeklyProgress(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

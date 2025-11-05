@@ -393,159 +393,6 @@ class MpesaCallbackView(APIView):
         return Response({"status": "callback received"}, status=status.HTTP_200_OK)
 
 
-"""
-class CreateStripeCheckoutSession(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request, *args, **kwargs):
-        logger.info("=== STRIPE PAYMENT INITIATION STARTED ===")
-        try:
-            week_id = request.data.get("week_id")
-            plan = request.data.get("plan", "BASIC")
-
-            logger.info(f"Request data: week_id={week_id}, plan={plan}")
-            logger.info(f"Full request data: {request.data}")
-
-            if not week_id:
-                logger.error("Missing week_id")
-                return Response(
-                    {"error": "Week ID is required"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            try:
-                week = Week.objects.get(id=week_id)
-                logger.info(f"Week found: {week} (ID: {week.id})")
-            except Week.DoesNotExist:
-                logger.error(f"Week not found: {week_id}")
-                return Response(
-                    {"error": "Week not found"}, status=status.HTTP_404_NOT_FOUND
-                )
-
-            user = request.user
-            logger.info(f"User: {user.id} - {user.email}")
-
-            # Check if already enrolled - ALLOW UPGRADES FROM FREE TO PAID PLANS
-            existing_enrollment = Enrollment.objects.filter(
-                user=user, week=week
-            ).first()
-            if existing_enrollment:
-                # Allow upgrade from FREE to BASIC/PRO
-                if existing_enrollment.plan == "FREE" and plan in ["BASIC", "PRO"]:
-                    logger.info(
-                        f"Allowing upgrade from FREE to {plan} for week {week.id}"
-                    )
-                elif existing_enrollment.plan == plan:
-                    logger.error(
-                        "User already enrolled in this week with the same plan"
-                    )
-                    return Response(
-                        {
-                            "error": f"You are already enrolled in this week with {plan} plan"
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                else:
-                    logger.error(
-                        f"Cannot change plan from {existing_enrollment.plan} to {plan}"
-                    )
-                    return Response(
-                        {
-                            "error": f"Cannot change plan from {existing_enrollment.plan} to {plan}"
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                # Week price
-                amount_usd = convert_kes_to_usd(float(week.price))
-                amount = int(amount_usd * 100)
-                logger.info(
-                    f"Converted amount: {week.price} KES = {amount_usd} USD (${amount_usd})"
-                )
-
-            # Verify Stripe configurations
-            if not settings.STRIPE_SECRET_KEY:
-                logger.error("Stripe secret key not configured")
-                return Response(
-                    {"error": "Stripe is not configured"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-
-            frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:5173")
-            success_url = f"{frontend_url}/dashboard?payment_success=true&session_id={{CHECKOUT_SESSION_ID}}&week_id={week_id}"
-            cancel_url = f"{frontend_url}/dashboard/courses?stripe_cancelled=true"
-
-            logger.info(f"Frontend URL: {frontend_url}")
-            logger.info(f"Success URL: {success_url}")
-            logger.info(f"Cancel URL: {cancel_url}")
-
-            logger.info("Creating Stripe checkout session...")
-            session = stripe.checkout.Session.create(
-                payment_method_types=["card"],
-                line_items=[
-                    {
-                        "price_data": {
-                            "currency": "usd",
-                            "product_data": {
-                                "name": f"{week}",
-                                "description": f"Upgrade to {plan} Plan - {week}",
-                            },
-                            "unit_amount": amount,
-                        },
-                        "quantity": 1,
-                    }
-                ],
-                mode="payment",
-                success_url=success_url,
-                cancel_url=cancel_url,
-                customer_email=user.email,
-                metadata={
-                    "user_id": str(user.id),
-                    "week_id": str(week.id),
-                    "plan": plan,
-                    "is_upgrade": str(
-                        existing_enrollment is not None
-                        and existing_enrollment.plan == "FREE"
-                    ),
-                },
-            )
-
-            logger.info(f"Stripe session created: {session.id}")
-            logger.info(f"Checkout URL: {session.url}")
-
-            # Save payment record
-            payment = Payment.objects.create(
-                user=user,
-                week=week,
-                plan=plan,
-                amount=amount / 100,
-                currency="USD",
-                method="stripe",
-                status="pending",
-                transaction_id=session.id,
-            )
-
-            logger.info(f"Payment record created: {payment.id}")
-
-            return Response(
-                {"checkout_url": session.url, "session_id": session.id},
-                status=status.HTTP_200_OK,
-            )
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe error: {str(e)}", exc_info=True)
-            return Response(
-                {"error": f"Stripe error: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        except Exception as e:
-            logger.error(f"Stripe payment initiation failed: {str(e)}", exc_info=True)
-            return Response(
-                {"error": f"Payment initiation failed: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-"""
-
-
 class CreateStripeCheckoutSession(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -863,3 +710,120 @@ class StripeWebhookView(APIView):
                 logger.error(f"Error processing webhook: {e}")
 
         return Response(status=200)
+
+
+class InitiateManualMpesaPayment(APIView):
+    """
+    Initiates a manual M-Pesa payment process.
+    Creates a pending payment and returns payment instructions.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        logger.info("=== MANUAL MPESA PAYMENT INITIATION STARTED ===")
+
+        try:
+            week_id = request.data.get("week_id")
+            plan = request.data.get("plan", "BASIC")
+
+            logger.info(f"Manual M-Pesa request: week_id={week_id}, plan={plan}")
+
+            if not week_id:
+                return Response({"error": "Week ID is required"}, status=400)
+
+            try:
+                week = Week.objects.get(id=week_id)
+                logger.info(f"Week found: {week}")
+            except Week.DoesNotExist:
+                return Response({"error": "Week not found"}, status=404)
+
+            user = request.user
+            logger.info(f"User: {user.id} - {user.email}")
+
+            # Check existing enrollment (same logic as other payment methods)
+            existing_enrollment = Enrollment.objects.filter(
+                user=user, week=week
+            ).first()
+
+            if existing_enrollment:
+                if existing_enrollment.plan == "FREE" and plan in ["BASIC", "PRO"]:
+                    logger.info(
+                        f"Allowing upgrade from FREE to {plan} for week {week.id}"
+                    )
+                elif existing_enrollment.plan == plan:
+                    return Response(
+                        {
+                            "error": f"You are already enrolled in this week with {plan} plan"
+                        },
+                        status=400,
+                    )
+                else:
+                    return Response(
+                        {
+                            "error": f"Cannot change plan from {existing_enrollment.plan} to {plan}"
+                        },
+                        status=400,
+                    )
+
+            # Determine amount
+            amount = float(week.price)
+            logger.info(f"Amount determined: {amount} for plan {plan}")
+
+            # Create manual payment record
+            payment = Payment.objects.create(
+                user=user,
+                week=week,
+                plan=plan,
+                amount=amount,
+                currency="KES",
+                method="manual_mpesa",
+                status="pending",
+                transaction_id=f"MANUAL_{user.id}_{week.id}_{int(timezone.now().timestamp())}",
+            )
+            logger.info(f"Manual payment record created: {payment.id}")
+
+            # Payment instructions with YOUR ACTUAL PAYBILL
+            paybill_number = "522533"
+            account_number = f"WEEK{week.id}"
+
+            instructions = {
+                "paybill_number": paybill_number,
+                "account_number": account_number,
+                "amount": amount,
+                "payment_reference": f"WEEK{week.id}",
+                "steps": [
+                    "1. Go to M-Pesa on your phone",
+                    "2. Select Lipa Na M-Pesa",
+                    "3. Select Pay Bill",
+                    f"4. Enter Business No: {paybill_number}",
+                    f"5. Enter Account No: {account_number}",
+                    f"6. Enter Amount: {amount}",
+                    "7. Enter your M-Pesa PIN",
+                    "8. Confirm payment",
+                ],
+                "note": f" After payment, send the M-Pesa confirmation message to our WhatsApp: +254-791-633441 for quick activation.",
+                "whatsapp_contact": "+254-791-633441",
+                "payment_id": payment.id,
+                "expected_time": "1-2 hours during business hours",
+            }
+
+            return Response(
+                {
+                    "success": True,
+                    "message": "Manual payment initiated. Please follow the instructions below.",
+                    "payment_id": payment.id,
+                    "instructions": instructions,
+                    "status": "pending",
+                },
+                status=200,
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Manual M-Pesa payment initiation failed: {str(e)}", exc_info=True
+            )
+            return Response(
+                {"error": f"Payment initiation failed: {str(e)}"},
+                status=400,
+            )
