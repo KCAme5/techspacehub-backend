@@ -34,6 +34,8 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.core.mail import send_mail
 from django.conf import settings
+from django.shortcuts import redirect, get_object_or_404
+from django.urls import reverse
 from courses.models import Enrollment
 from .models import Payment
 
@@ -113,19 +115,27 @@ class PaymentAdmin(admin.ModelAdmin):
                     enrollment.save()
 
                 # Send success email
-                self.send_approval_email(payment, enrollment)
-
-                self.message_user(
-                    request,
-                    f"Payment approved and user enrolled successfully! Email sent to {payment.user.email}",
-                )
+                try:
+                    self.send_approval_email(payment, enrollment)
+                    self.message_user(
+                        request,
+                        f"Payment approved and user enrolled successfully! Email sent to {payment.user.email}",
+                    )
+                except Exception as e:
+                    self.message_user(
+                        request,
+                        f"Payment approved but email failed: {str(e)}",
+                        level="WARNING",
+                    )
             else:
                 self.message_user(request, "Cannot approve this payment", level="ERROR")
 
         except Payment.DoesNotExist:
             self.message_user(request, "Payment not found", level="ERROR")
+        except Exception as e:
+            self.message_user(request, f"Error: {str(e)}", level="ERROR")
 
-        return admin.utils.reverse("admin:billing_payment_changelist")
+        return redirect("admin:billing_payment_changelist")
 
     def send_approval_email(self, payment, enrollment):
         """Send email notification for approved manual payment"""
@@ -189,7 +199,10 @@ class PaymentAdmin(admin.ModelAdmin):
                     enrollment.save()
 
                 # Send email
-                self.send_approval_email(payment, enrollment)
+                try:
+                    self.send_approval_email(payment, enrollment)
+                except Exception as e:
+                    print(f"Failed to send email for payment {payment.id}: {e}")
 
         self.message_user(request, f"{queryset.count()} payments marked as successful")
 
