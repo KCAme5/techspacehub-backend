@@ -131,6 +131,12 @@ class PaymentAdmin(admin.ModelAdmin):
         """Send email notification for approved manual payment"""
         subject = f"Payment Confirmed - Access Granted for {payment.week}"
 
+        site_name = getattr(settings, "SITE_NAME", "TechSpace")
+
+        frontend_url = getattr(
+            settings, "FRONTEND_URL", "https://cybercraft-frontend.vercel.app"
+        )
+
         message = f"""
         Hello {payment.user.username},
 
@@ -145,12 +151,12 @@ class PaymentAdmin(admin.ModelAdmin):
 
         **You now have full access** to the course materials for your selected plan.
 
-        Start learning now: {settings.FRONTEND_URL}/dashboard
+        Start learning now: {frontend_url}/dashboard
 
         Need help? Reply to this email or contact us on WhatsApp.
 
         Happy learning!
-        The {settings.SITE_NAME} Team
+        The {site_name} Team
         """
 
         try:

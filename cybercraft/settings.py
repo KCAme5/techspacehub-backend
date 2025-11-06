@@ -26,6 +26,7 @@ else:
 # Frontend/Backend URLs
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://cybercraft-frontend.vercel.app")
 BACKEND_URL = os.getenv("BACKEND_URL", "https://cybercraft-back.onrender.com")
+SITE_NAME = "TechSpace"
 
 # Application definition
 INSTALLED_APPS = [
