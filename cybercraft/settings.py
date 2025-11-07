@@ -168,6 +168,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://cybercraft-frontend.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://techspace.ac.ke",
+    "https://www.techspace.ac.ke",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
@@ -212,8 +214,8 @@ SOCIALACCOUNT_PROVIDERS = {
 }
 # JWT Settings for longer token expiration
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(hours=4),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=3),
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=2),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
 }
