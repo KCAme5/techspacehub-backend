@@ -168,12 +168,14 @@ CORS_ALLOWED_ORIGINS = [
     "https://cybercraft-frontend.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://techspace.ac.ke",
-    "https://www.techspace.ac.ke",
+    "https://techspacehub.co.ke",
+    "https://www.techspacehub.co.ke",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://cybercraft-frontend.vercel.app",
+    "https://techspacehub.co.ke",
+    "https://www.techspacehub.co.ke",
     "https://cybercraft-back.onrender.com",
 ]
 
