@@ -63,7 +63,7 @@ def google_callback_fixed(request):
         return generate_redirect_with_tokens(request.user)
 
     logger.error("No user authenticated in callback")
-    return redirect("http://localhost:5173/login?error=auth_failed")
+    return redirect(f"{settings.FRONTEND_URL}/login?error=auth_failed")
 
 
 @login_required
@@ -77,7 +77,7 @@ def google_login_redirect(request):
 
     # Build frontend URL with tokens
     params = urlencode({"access": access_token, "refresh": refresh_token})
-    frontend_url = f"http://localhost:5173/oauth2/redirect?{params}"
+    frontend_url = f"{settings.FRONTEND_URL}/oauth2/redirect?{params}"
 
     return redirect(frontend_url)
 
@@ -315,6 +315,7 @@ class ReferralStatsView(APIView):
     def get(self, request):
         user = request.user
         total_referrals = user.referrals_made.count()
+        pending_referrals = user.referrals_made.filter(status="pending").count()
         completed_referrals = user.referrals_made.filter(status="completed").count()
         total_earnings = (
             user.referrals_made.aggregate(total=Sum("commission_earned"))["total"] or 0
@@ -323,6 +324,7 @@ class ReferralStatsView(APIView):
         return Response(
             {
                 "total_referrals": total_referrals,
+                "pending_referrals": pending_referrals,
                 "completed_referrals": completed_referrals,
                 "total_earnings": total_earnings,
                 "referral_code": user.my_referral_code,
@@ -383,51 +385,6 @@ class WithdrawalRequestView(APIView):
         )
 
 
-"""def process_referral_commission(referred_user, payment_amount):
-    try:
-        referral = Referral.objects.get(referred_user=referred_user)
-
-        # Prevent duplicate processing - if commission already paid, skip
-        if referral.status == "completed" and referral.commission_paid:
-            logger.info(
-                f"Referral commission already processed for user: {referred_user.id}"
-            )
-            return True
-
-        commission_rate = Decimal("0.10")
-        commission = payment_amount * commission_rate
-
-        # Update referral record
-        referral.status = "completed"
-        referral.commission_earned = commission
-        referral.commission_paid = True
-        referral.save()
-
-        # Credit referrer's wallet
-        referrer_wallet, created = Wallet.objects.get_or_create(user=referral.referrer)
-        referrer_wallet.balance += commission
-        referrer_wallet.save()
-
-        # Record transaction
-        WalletTransaction.objects.create(
-            wallet=referrer_wallet,
-            amount=commission,
-            transaction_type="referral",
-            description=f"Referral commission from {referred_user.email}",
-            status="completed",
-        )
-
-        logger.info(
-            f"Referral commission processed: {referral.referrer.email} earned ${commission} from {referred_user.email}"
-        )
-        return True
-
-    except Referral.DoesNotExist:
-        logger.info(f"No referral found for user: {referred_user.id}")
-        return False
-"""
-
-
 def process_referral_commission(referred_user, payment_amount):
     """
     Process referral commission when a referred user makes a payment
@@ -467,8 +424,8 @@ def process_referral_commission(referred_user, payment_amount):
             )
             return True
 
-        # Calculate commission (10% of payment amount)
-        commission_rate = Decimal("0.10")
+        # Calculate commission
+        commission_rate = Decimal("0.17")
         commission = payment_amount * commission_rate
         logger.info(f"Commission calculated: ${commission}")
 

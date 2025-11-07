@@ -54,14 +54,25 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.subscription_status = "inactive"
         user.my_referral_code = str(uuid.uuid4())[:8]
 
+        user.save()
+
         if referral_code:
             try:
                 referrer = User.objects.get(my_referral_code=referral_code)
                 user.referred_by = referrer
+                user.save(update_fields=["referred_by"])
+
+                Referral.objects.create(
+                    referrer=referrer,
+                    referred_user=user,
+                    referral_code_used=referral_code,
+                    status="pending",
+                    commission_earned=0.00,
+                    commission_paid=False,
+                )
+
             except User.DoesNotExist:
                 pass
-
-        user.save()
 
         # Send verification email
         token = default_token_generator.make_token(user)
@@ -71,12 +82,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         send_mail(
             "Verify your account",
             f"Please verify your account by clicking: {verify_link}",
-            "noreply@cybercraft.com",
+            "noreply@techspace.com",
             [user.email],
             fail_silently=True,
         )
 
-        referral_code = validated_data.pop("referral_code", None)
+        """referral_code = validated_data.pop("referral_code", None)
         if referral_code:
             try:
                 referrer = User.objects.get(my_referral_code=referral_code)
@@ -91,7 +102,7 @@ class RegisterSerializer(serializers.ModelSerializer):
                     status="pending",
                 )
             except User.DoesNotExist:
-                pass
+                pass"""
 
         return user
 
@@ -202,6 +213,12 @@ class ReferralSerializer(serializers.ModelSerializer):
     referred_user_name = serializers.CharField(
         source="referred_user.username", read_only=True
     )
+    referred_user_status = serializers.CharField(
+        source="referred_user.subscription_status", read_only=True
+    )
+    referred_user_joined = serializers.DateTimeField(
+        source="referred_user.date_joined", read_only=True
+    )
 
     class Meta:
         model = Referral
@@ -209,6 +226,8 @@ class ReferralSerializer(serializers.ModelSerializer):
             "id",
             "referred_user_email",
             "referred_user_name",
+            "referred_user_status",
+            "referred_user_joined",
             "referral_date",
             "status",
             "commission_earned",

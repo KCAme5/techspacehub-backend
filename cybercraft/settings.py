@@ -24,8 +24,8 @@ else:
     ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
 
 # Frontend/Backend URLs
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://cybercraft-frontend.vercel.app")
-BACKEND_URL = os.getenv("BACKEND_URL", "https://cybercraft-back.onrender.com")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "")
+BACKEND_URL = os.getenv("BACKEND_URL", "")
 SITE_NAME = "TechSpace"
 
 # Application definition
