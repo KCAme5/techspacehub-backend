@@ -34,6 +34,7 @@ from urllib.parse import urlencode
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.contrib.auth import login
+from .email_utils import send_verification_email
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -45,6 +46,7 @@ LOCK_TIME_MINUTES = 15  # lock duration
 logger = logging.getLogger("accounts")
 
 
+# In accounts/views.py - UPDATE THE GOOGLE CALLBACK FUNCTION
 def google_callback_fixed(request):
     # Check if user is already authenticated via social account
     if request.user.is_authenticated:
@@ -64,6 +66,18 @@ def google_callback_fixed(request):
 
     logger.error("No user authenticated in callback")
     return redirect(f"{settings.FRONTEND_URL}/login?error=auth_failed")
+
+
+def generate_redirect_with_tokens(user):
+    """Helper function to generate redirect URL with JWT tokens"""
+    refresh = RefreshToken.for_user(user)
+    access_token = str(refresh.access_token)
+    refresh_token = str(refresh)
+
+    params = urlencode({"access": access_token, "refresh": refresh_token})
+    frontend_url = f"{settings.FRONTEND_URL}/oauth2/redirect?{params}"
+
+    return redirect(frontend_url)
 
 
 @login_required
@@ -284,8 +298,14 @@ class ResendVerificationView(APIView):
 
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            send_verification_email(user.email, uid, token)
-            return Response({"detail": "Verification email resent."}, status=200)
+            email_sent = send_verification_email(user.email, uid, token)
+
+            if email_sent:
+                return Response({"detail": "Verification email resent."}, status=200)
+            else:
+                return Response(
+                    {"detail": "Failed to send verification email."}, status=500
+                )
         except User.DoesNotExist:
             return Response({"detail": "No user found with this email."}, status=404)
 

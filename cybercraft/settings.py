@@ -1,7 +1,3 @@
-"""
-Django settings for cybercraft project.
-"""
-
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -16,16 +12,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "generate-a-strong-key-here-for-now")
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-# Allowed hosts - production
-RENDER_EXTERNAL_HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
-if RENDER_EXTERNAL_HOSTNAME:
-    ALLOWED_HOSTS = [RENDER_EXTERNAL_HOSTNAME, "localhost", "127.0.0.1"]
-else:
-    ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+# Allowed hosts - PRODUCTION
+ALLOWED_HOSTS = [
+    "cybercraft-back.onrender.com",
+    "techspacehub.co.ke",
+    "www.techspacehub.co.ke",
+]
 
-# Frontend/Backend URLs
-FRONTEND_URL = os.getenv("FRONTEND_URL", "")
-BACKEND_URL = os.getenv("BACKEND_URL", "")
+# Frontend/Backend URLs - PRODUCTION
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://techspacehub.co.ke")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://cybercraft-back.onrender.com")
 SITE_NAME = "TechSpace"
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
@@ -160,7 +156,7 @@ ACCOUNT_AUTHENTICATION_METHOD = "email"
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 ACCOUNT_LOGIN_METHODS = {"email"}
 
-# Social account settings
+# Social account settings - PRODUCTION
 SOCIALACCOUNT_EMAIL_VERIFICATION = "optional"
 SOCIALACCOUNT_EMAIL_REQUIRED = True
 SOCIALACCOUNT_QUERY_EMAIL = True
@@ -169,22 +165,18 @@ SOCIALACCOUNT_LOGIN_ON_GET = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
 ACCOUNT_LOGOUT_ON_GET = True
 
-# Redirect URLs - USING ENVIRONMENT VARIABLES
+# Redirect URLs - PRODUCTION
 LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 ACCOUNT_LOGOUT_REDIRECT_URL = f"{FRONTEND_URL}/login"
 SOCIALACCOUNT_LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 
-# CORS settings
+# CORS settings - PRODUCTION
 CORS_ALLOWED_ORIGINS = [
-    "https://cybercraft-frontend.vercel.app",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
-    "https://cybercraft-frontend.vercel.app",
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://cybercraft-back.onrender.com",
@@ -212,7 +204,7 @@ REST_FRAMEWORK = {
     },
 }
 
-# Social providers
+# Social providers - PRODUCTION
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
         "APP": {
@@ -225,6 +217,7 @@ SOCIALACCOUNT_PROVIDERS = {
         "OAUTH_PKCE_ENABLED": True,
     }
 }
+
 # JWT Settings for longer token expiration
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),
@@ -233,16 +226,17 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
 }
 
-
 # File upload limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 
-# Security
+# Security - PRODUCTION
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"

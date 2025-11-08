@@ -1,8 +1,9 @@
-# accounts/middleware.py (enhanced version)
+# accounts/middleware.py - UPDATED FOR PRODUCTION
 import logging
 from rest_framework_simplejwt.tokens import RefreshToken
 from urllib.parse import urlencode
 from django.http import HttpResponseRedirect
+from django.conf import settings
 
 logger = logging.getLogger("accounts")
 
@@ -28,18 +29,18 @@ class SocialAuthRedirectMiddleware:
                 access_token = str(refresh.access_token)
                 refresh_token = str(refresh)
 
-                # Build frontend URL
+                # Build frontend URL - PRODUCTION
                 params = urlencode({"access": access_token, "refresh": refresh_token})
-                frontend_url = f"http://localhost:5173/oauth2/redirect?{params}"
+                frontend_url = f"{settings.FRONTEND_URL}/oauth2/redirect?{params}"
 
                 logger.info(f"Redirecting to frontend with tokens")
                 return HttpResponseRedirect(frontend_url)
 
             except Exception as e:
                 logger.error(f"Error in social auth middleware: {e}")
-                # Fallback: redirect to login with error
+                # Fallback: redirect to login with error - PRODUCTION
                 return HttpResponseRedirect(
-                    "http://localhost:5173/login?error=auth_failed"
+                    f"{settings.FRONTEND_URL}/login?error=auth_failed"
                 )
 
         return response
