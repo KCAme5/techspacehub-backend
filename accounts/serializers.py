@@ -11,6 +11,7 @@ from django.utils.text import slugify
 from django.utils import timezone
 from .models import Wallet, WalletTransaction, WithdrawalRequest, Referral
 from django.conf import settings
+from .email_utils import send_verification_email, send_password_reset_email
 
 import logging
 
@@ -81,7 +82,9 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        frontend_url = getattr(settings, "FRONTEND_URL", "https://techspacehub.co.ke")
+        send_verification_email(user.email, uid, token)
+
+        '''frontend_url = getattr(settings, "FRONTEND_URL", "https://techspacehub.co.ke")
         verify_link = f"{frontend_url}/verify-email/{uid}/{token}/"
 
         # HTML email content
@@ -131,7 +134,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             )
             logger.info(f"Verification email sent to {user.email}")
         except Exception as e:
-            logger.error(f"Failed to send verification email to {user.email}: {str(e)}")
+            logger.error(f"Failed to send verification email to {user.email}: {str(e)}")'''
 
         return user
 
@@ -174,7 +177,10 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         if user:
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
-            frontend_url = getattr(
+
+            send_password_reset_email(user.email, uid, token)
+
+            '''frontend_url = getattr(
                 settings, "FRONTEND_URL", "https://techspacehub.co.ke"
             )
             reset_link = f"{frontend_url}/password-reset-confirm/{uid}/{token}/"
@@ -228,7 +234,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             except Exception as e:
                 logger.error(
                     f"Failed to send password reset email to {user.email}: {str(e)}"
-                )
+                )'''
 
         return {
             "message": "If an account with this email exists, you will receive a reset link."

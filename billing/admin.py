@@ -1,11 +1,15 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.core.mail import send_mail
 from django.conf import settings
-from django.shortcuts import redirect, get_object_or_404
-from django.urls import reverse
+from django.shortcuts import redirect
 from courses.models import Enrollment
 from .models import Payment
+
+# Import our email utilities
+from accounts.email_utils import (
+    send_manual_payment_approval_email,
+    send_payment_confirmation_email,
+)
 
 
 @admin.register(Payment)
@@ -41,7 +45,7 @@ class PaymentAdmin(admin.ModelAdmin):
     def manual_actions(self, obj):
         if obj.method == "manual_mpesa" and obj.status == "pending":
             return format_html(
-                '<a class="button" href="{}" style="background-color: #4CAF50; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px;">Approve</a>',
+                '<a class="button" href="{}" style="background-color: #4CAF50; color: white; padding: 5px 10px; text-decoration: none; border-radius: 3px; margin: 2px;">Approve</a>',
                 f"approve/{obj.id}/",
             )
         return "-"
@@ -82,21 +86,33 @@ class PaymentAdmin(admin.ModelAdmin):
                     enrollment.is_active = True
                     enrollment.save()
 
-                # Send success email
+                # Send success email using our unified email utility
                 try:
-                    self.send_approval_email(payment, enrollment)
-                    self.message_user(
-                        request,
-                        f"Payment approved and user enrolled successfully! Email sent to {payment.user.email}",
-                    )
+                    email_sent = send_manual_payment_approval_email(payment, enrollment)
+                    if email_sent:
+                        self.message_user(
+                            request,
+                            f"Payment approved and confirmation email sent to {payment.user.email}",
+                            level="SUCCESS",
+                        )
+                    else:
+                        self.message_user(
+                            request,
+                            f"Payment approved but failed to send email to {payment.user.email}",
+                            level="WARNING",
+                        )
                 except Exception as e:
                     self.message_user(
                         request,
                         f"Payment approved but email failed: {str(e)}",
-                        level="WARNING",
+                        level="ERROR",
                     )
             else:
-                self.message_user(request, "Cannot approve this payment", level="ERROR")
+                self.message_user(
+                    request,
+                    "Can only approve pending manual M-Pesa payments",
+                    level="ERROR",
+                )
 
         except Payment.DoesNotExist:
             self.message_user(request, "Payment not found", level="ERROR")
@@ -105,51 +121,11 @@ class PaymentAdmin(admin.ModelAdmin):
 
         return redirect("admin:billing_payment_changelist")
 
-    def send_approval_email(self, payment, enrollment):
-        """Send email notification for approved manual payment"""
-        subject = f"Payment Confirmed - Access Granted for {payment.week}"
-
-        site_name = getattr(settings, "SITE_NAME", "TechSpace")
-
-        frontend_url = getattr(
-            settings, "FRONTEND_URL", "https://cybercraft-frontend.vercel.app"
-        )
-
-        message = f"""
-        Hello {payment.user.username},
-
-        Your manual payment for {payment.week} has been confirmed!
-
-         **Payment Details:**
-        - Course: {payment.week.course.title}
-        - Week: {payment.week.title} ({payment.week.level})
-        - Plan: {payment.plan}
-        - Amount: KES {payment.amount}
-        - Payment Method: Manual M-Pesa
-
-        **You now have full access** to the course materials for your selected plan.
-
-        Start learning now: {frontend_url}/dashboard
-
-        Need help? Reply to this email or contact us on WhatsApp.
-
-        Happy learning!
-        The {site_name} Team
-        """
-
-        try:
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[payment.user.email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            print(f"Failed to send email: {e}")
-
     def mark_as_success(self, request, queryset):
         """Admin action to mark payments as success"""
+        success_count = 0
+        email_count = 0
+
         for payment in queryset:
             if payment.status != "success":
                 payment.status = "success"
@@ -166,13 +142,34 @@ class PaymentAdmin(admin.ModelAdmin):
                     enrollment.is_active = True
                     enrollment.save()
 
-                # Send email
+                # Send appropriate email based on payment method
                 try:
-                    self.send_approval_email(payment, enrollment)
+                    if payment.method == "manual_mpesa":
+                        email_sent = send_manual_payment_approval_email(
+                            payment, enrollment
+                        )
+                    else:
+                        email_sent = send_payment_confirmation_email(
+                            user_email=payment.user.email,
+                            amount=payment.amount,
+                            week_title=str(payment.week),
+                            payment_method=payment.method,
+                        )
+
+                    if email_sent:
+                        email_count += 1
+
                 except Exception as e:
+                    # Log but don't stop the process
                     print(f"Failed to send email for payment {payment.id}: {e}")
 
-        self.message_user(request, f"{queryset.count()} payments marked as successful")
+                success_count += 1
+
+        message = f"{success_count} payments marked as successful"
+        if email_count > 0:
+            message += f" and {email_count} confirmation emails sent"
+
+        self.message_user(request, message)
 
     def mark_as_failed(self, request, queryset):
         updated = queryset.update(status="failed")
