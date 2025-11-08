@@ -39,7 +39,7 @@ class User(AbstractUser):
         related_name="users_referred",
     )
 
-    # --- Security fields (lockout / failed attempts)
+    # Security fields (lockout / failed attempts)
     failed_login_attempts = models.PositiveIntegerField(default=0)
     last_failed_login = models.DateTimeField(null=True, blank=True)
     locked_until = models.DateTimeField(null=True, blank=True)
@@ -99,19 +99,19 @@ class Subscription(models.Model):
     is_active = models.BooleanField(default=False)
 
     def save(self, *args, **kwargs):
-        if not self.expiry_date:
-            self.expiry_date = timezone.now() + timedelta(days=30)
+        if not self.expiry_date and self.is_active:
+            self.expiry_date = timezone.now() + timedelta(days=365 * 50)
+
+        super().save(*args, **kwargs)
 
         if self.user:
             self.user.subscription_plan = self.plan
             self.user.subscription_status = "active" if self.is_active else "inactive"
             self.user.save(update_fields=["subscription_plan", "subscription_status"])
 
-        super().save(*args, **kwargs)
-
     def renew(self, duration_days=30):
         self.start_date = timezone.now()
-        self.expiry_date = self.start_date + timedelta(days=duration_days)
+        # self.expiry_date = self.start_date + timedelta(days=duration_days)
         self.is_active = True
         self.save()
 

@@ -14,6 +14,7 @@ import datetime
 from base64 import b64encode
 import logging
 from accounts.views import process_referral_commission
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -362,6 +363,26 @@ class MpesaCallbackView(APIView):
                 else:
                     logger.info(f"Created new enrollment: {enrollment.id}")
 
+                # ACTIVATE USER SUBSCRIPTION
+                subscription, sub_created = Subscription.objects.get_or_create(
+                    user=user,
+                    defaults={
+                        "plan": plan,
+                        "is_active": True,
+                        # "expiry_date": timezone.now() + timedelta(days=30),
+                    },
+                )
+
+                if not sub_created:
+                    # Update existing subscription
+                    subscription.plan = plan
+                    subscription.is_active = True
+                    subscription.start_date = timezone.now()
+                    subscription.expiry_date = None
+                    subscription.save()
+
+                logger.info(f"Subscription activated for user: {user.id}, plan: {plan}")
+
                 logger.info(f"=== CHECKING FOR REFERRAL COMMISSION ===")
                 logger.info(f"User referred_by: {user.referred_by}")
                 if user.referred_by:
@@ -609,6 +630,25 @@ class VerifyStripePayment(APIView):
                 payment.save()
                 logger.info(f"Payment record updated: {payment.id}")
 
+                subscription, sub_created = Subscription.objects.get_or_create(
+                    user=user,
+                    defaults={
+                        "plan": plan,
+                        "is_active": True,
+                        # "expiry_date": timezone.now() + timedelta(days=30),
+                    },
+                )
+
+                if not sub_created:
+                    # Update existing subscription
+                    subscription.plan = plan
+                    subscription.is_active = True
+                    subscription.start_date = timezone.now()
+                    subscription.expiry_date = None
+                    subscription.save()
+
+                logger.info(f"Subscription activated for user: {user.id}, plan: {plan}")
+
                 logger.info(f"Checking for referral commission for user: {user.id}")
                 commission_result = process_referral_commission(user, payment.amount)
                 if commission_result:
@@ -695,6 +735,25 @@ class StripeWebhookView(APIView):
                     )
                 else:
                     logger.info(f"Created new enrollment via webhook: {enrollment.id}")
+
+                subscription, sub_created = Subscription.objects.get_or_create(
+                    user=user,
+                    defaults={
+                        "plan": plan,
+                        "is_active": True,
+                    },
+                )
+
+                if not sub_created:
+                    subscription.plan = plan
+                    subscription.is_active = True
+                    subscription.start_date = timezone.now()
+                    subscription.expiry_date = None
+                    subscription.save()
+
+                logger.info(
+                    f"LIFETIME subscription activated via webhook for user: {user.id}"
+                )
 
                 # Process referral commission
                 logger.info(f"Checking for referral commission for user: {user.id}")

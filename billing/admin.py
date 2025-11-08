@@ -1,35 +1,3 @@
-"""
-from django.contrib import admin
-from .models import Payment
-
-
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = (
-        "user",
-        "week",
-        "amount",
-        "method",
-        "status",
-        "transaction_id",
-        "created_at",
-    )
-    list_filter = ("status", "method", "created_at")
-    search_fields = ("user__email", "week__title", "transaction_id")
-    readonly_fields = ("created_at", "updated_at")
-    ordering = ("-created_at",)
-    list_per_page = 20
-
-    fieldsets = (
-        (
-            "Payment Details",
-            {"fields": ("user", "week", "amount", "currency", "method")},
-        ),
-        ("Transaction Info", {"fields": ("transaction_id", "status")}),
-        ("Timestamps", {"fields": ("created_at", "updated_at")}),
-    )
-"""
-
 from django.contrib import admin
 from django.utils.html import format_html
 from django.core.mail import send_mail

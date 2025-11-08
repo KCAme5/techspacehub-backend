@@ -3,26 +3,19 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import (
     User,
     Profile,
-    Subscription,
     Wallet,
     Referral,
     WalletTransaction,
     WithdrawalRequest,
 )
 from django.utils import timezone
+from django.utils.html import format_html
 
 
 class ProfileInline(admin.StackedInline):
     model = Profile
     can_delete = False
     verbose_name_plural = "Profile"
-    fk_name = "user"
-
-
-class SubscriptionInline(admin.StackedInline):
-    model = Subscription
-    can_delete = False
-    verbose_name_plural = "Subscription"
     fk_name = "user"
 
 
@@ -41,26 +34,65 @@ class UserAdmin(BaseUserAdmin):
                 "fields": (
                     "role",
                     "subscription_status",
+                    "subscription_plan",
                     "my_referral_code",
                     "referred_by",
                 )
             },
         ),
     )
-    inlines = [ProfileInline, SubscriptionInline, WalletInline]
+    inlines = [ProfileInline, WalletInline]
 
     list_display = (
         "username",
         "email",
         "role",
-        "subscription_status",
+        "email_verified",
+        "subscription_status_display",
+        "subscription_plan",
         "my_referral_code",
         "referred_by",
         "is_staff",
-        "is_superuser",
+        "date_joined",
     )
+
+    list_filter = (
+        "role",
+        "subscription_status",
+        "subscription_plan",
+        "is_staff",
+        "is_superuser",
+        "is_active",  # Add email verification filter
+        "date_joined",
+    )
+
     search_fields = ("username", "email", "my_referral_code")
-    list_filter = ("role", "subscription_status", "is_staff", "is_superuser")
+
+    readonly_fields = ("date_joined", "last_login")
+
+    def email_verified(self, obj):
+        if obj.is_active:
+            return format_html(
+                '<span style="color: green; font-weight: bold;">✓ Verified</span>'
+            )
+        else:
+            return format_html(
+                '<span style="color: red; font-weight: bold;">✗ Pending</span>'
+            )
+
+    email_verified.short_description = "Email Verified"
+
+    def subscription_status_display(self, obj):
+        if obj.subscription_status == "active":
+            return format_html(
+                '<span style="color: green; font-weight: bold;">ACTIVE</span>'
+            )
+        else:
+            return format_html(
+                '<span style="color: red; font-weight: bold;">INACTIVE</span>'
+            )
+
+    subscription_status_display.short_description = "Subscription Status"
 
 
 class WalletAdmin(admin.ModelAdmin):
@@ -141,7 +173,6 @@ class WithdrawalRequestAdmin(admin.ModelAdmin):
 # Register everything
 admin.site.register(User, UserAdmin)
 admin.site.register(Profile)
-admin.site.register(Subscription)
 admin.site.register(Wallet, WalletAdmin)
 admin.site.register(Referral, ReferralAdmin)
 admin.site.register(WalletTransaction, WalletTransactionAdmin)

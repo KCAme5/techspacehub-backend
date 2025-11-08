@@ -79,6 +79,37 @@ class CourseList(generics.ListAPIView):
         level = self.request.query_params.get("level")
         if level:
             qs = qs.filter(weeks__level=level).distinct()
+
+        if self.request.user.is_authenticated:
+            user = self.request.user
+
+            # Get all courses where user has enrollments
+            enrolled_courses = Course.objects.filter(
+                weeks__enrollments__user=user, weeks__enrollments__is_active=True
+            ).distinct()
+
+            # For each enrolled course, check if all weeks are completed
+            courses_to_exclude = []
+            for course in enrolled_courses:
+                # Get all weeks in this course
+                course_weeks = course.weeks.all()
+                total_weeks = course_weeks.count()
+
+                if total_weeks == 0:
+                    continue
+
+                # Count how many weeks the user has completed
+                completed_weeks = WeeklyProgress.objects.filter(
+                    user=user, week__in=course_weeks, week_completed=True
+                ).count()
+
+                # If all weeks are completed, exclude this course
+                if completed_weeks >= total_weeks:
+                    courses_to_exclude.append(course.id)
+
+            # Exclude completed courses from the queryset
+            if courses_to_exclude:
+                qs = qs.exclude(id__in=courses_to_exclude)
         return qs
 
 

@@ -388,6 +388,7 @@ class Enrollment(models.Model):
     completed = models.BooleanField(default=False)
     progress = models.IntegerField(default=0)
     is_active = models.BooleanField(default=True)
+    last_accessed = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ["user", "week"]
@@ -395,6 +396,17 @@ class Enrollment(models.Model):
 
     def __str__(self):
         return f"{self.user} - {self.week}"
+
+    def save(self, *args, **kwargs):
+
+        if self.plan in ["BASIC", "PRO"]:
+            self.is_active = True
+        super().save(*args, **kwargs)
+
+    @property
+    def is_lifetime_access(self):
+        """Check if this enrollment has lifetime access"""
+        return self.plan in ["BASIC", "PRO"] and self.is_active
 
 
 class Progress(models.Model):
