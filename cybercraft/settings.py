@@ -28,6 +28,17 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "")
 BACKEND_URL = os.getenv("BACKEND_URL", "")
 SITE_NAME = "TechSpace"
 
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke")
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@techspacehub.co.ke")
+
+EMAIL_HOST = "smtp.sendgrid.net"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = "apikey"
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST_PASSWORD = os.getenv("SENDGRID_API_KEY")
+
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -221,9 +232,7 @@ SIMPLE_JWT = {
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
 }
-# Email settings
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-DEFAULT_FROM_EMAIL = "noreply@cybercraft.com"
+
 
 # File upload limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
