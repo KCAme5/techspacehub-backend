@@ -25,7 +25,6 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "https://techspacehub.co.ke")
 BACKEND_URL = os.getenv(
     "BACKEND_URL",
     "https://cybercraft-back.onrender.com",
-    "https://api.techspacehub.co.ke",
 )
 SITE_NAME = "TechSpace"
 
