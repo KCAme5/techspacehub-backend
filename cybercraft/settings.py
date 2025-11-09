@@ -3,8 +3,6 @@ import os
 from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
-import django
-from django.conf import settings
 
 load_dotenv()
 
@@ -207,15 +205,6 @@ REST_FRAMEWORK = {
 }
 
 
-def update_site_info():
-    from django.contrib.sites.models import Site
-
-    current_site = Site.objects.get_current()
-    current_site.domain = "techspacehub.co.ke"
-    current_site.name = "TechSpace"
-    current_site.save()
-
-
 # Social providers - PRODUCTION
 SOCIALACCOUNT_PROVIDERS = {
     "google": {
@@ -227,10 +216,6 @@ SOCIALACCOUNT_PROVIDERS = {
         "SCOPE": ["profile", "email"],
         "AUTH_PARAMS": {"access_type": "online"},
         "OAUTH_PKCE_ENABLED": True,
-    },
-    "SCOPE": ["profile", "email"],
-    "AUTH_PARAMS": {
-        "access_type": "online",
     },
 }
 

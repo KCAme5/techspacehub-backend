@@ -22,21 +22,9 @@ from accounts.views import (
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import JsonResponse
-
-
-def root_view(request):
-    return JsonResponse(
-        {
-            "message": "TechSpace API Server",
-            "status": "running",
-            "frontend": "https://techspacehub.co.ke",
-        }
-    )
 
 
 urlpatterns = [
-    path("", root_view, name="root"),
     path("admin/", admin.site.urls),
     path("api/accounts/", include("accounts.urls")),
     path("api/courses/", include("courses.urls")),
