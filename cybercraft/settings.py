@@ -234,6 +234,13 @@ SOCIALACCOUNT_PROVIDERS = {
     },
 }
 
+# Additional settings to ensure proper site info
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "[TechSpace] "
+EMAIL_SUBJECT_PREFIX = "[TechSpace] "
+
+# Social account adapter to customize the flow
+SOCIALACCOUNT_ADAPTER = "accounts.adapters.CustomSocialAccountAdapter"
+
 # JWT Settings for longer token expiration
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=1),

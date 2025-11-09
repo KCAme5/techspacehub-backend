@@ -17,15 +17,26 @@ Including another URLconf
 
 from django.contrib import admin
 from accounts.views import (
-    # google_login_redirect,
-    # google_callback,
     google_callback_fixed,
 )
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import JsonResponse
+
+
+def root_view(request):
+    return JsonResponse(
+        {
+            "message": "TechSpace API Server",
+            "status": "running",
+            "frontend": "https://techspacehub.co.ke",
+        }
+    )
+
 
 urlpatterns = [
+    path("", root_view, name="root"),
     path("admin/", admin.site.urls),
     path("api/accounts/", include("accounts.urls")),
     path("api/courses/", include("courses.urls")),
@@ -41,15 +52,11 @@ urlpatterns = [
     path("accounts/", include("allauth.socialaccount.urls")),
     path("api/auth/social/", include("accounts.urls")),
     path("accounts/", include("allauth.urls")),
-    # path(
-    #    "accounts/google/login/callback/", google_login_redirect, name="google_callback"
-    # ),
     path(
         "accounts/google/login/callback/",
         google_callback_fixed,
         name="google_callback_fixed",
     ),
-    # path("debug-callback/", debug_callback, name="debug-callback"),
 ]
 
 if settings.DEBUG:
