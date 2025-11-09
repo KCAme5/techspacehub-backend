@@ -17,11 +17,16 @@ ALLOWED_HOSTS = [
     "cybercraft-back.onrender.com",
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
+    "api.techspacehub.co.ke",
 ]
 
 # Frontend/Backend URLs - PRODUCTION
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://techspacehub.co.ke")
-BACKEND_URL = os.getenv("BACKEND_URL", "https://cybercraft-back.onrender.com")
+BACKEND_URL = os.getenv(
+    "BACKEND_URL",
+    "https://cybercraft-back.onrender.com",
+    "https://api.techspacehub.co.ke",
+)
 SITE_NAME = "TechSpace"
 
 SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
@@ -170,10 +175,12 @@ LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 ACCOUNT_LOGOUT_REDIRECT_URL = f"{FRONTEND_URL}/login"
 SOCIALACCOUNT_LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 # CORS settings - PRODUCTION
 CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
+    "https://api.techspacehub.co.ke",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
