@@ -66,28 +66,21 @@ class PaymentAdmin(admin.ModelAdmin):
         return custom_urls + urls
 
     def approve_manual_payment(self, request, payment_id):
-        """Approve manual payment and enroll user"""
+        """Approve manual payment - let the Payment model handle enrollment and subscription"""
         try:
             payment = Payment.objects.get(id=payment_id)
             if payment.method == "manual_mpesa" and payment.status == "pending":
-                # Update payment status
+                # Update payment status - this will trigger the model's save method
+                # which will automatically handle enrollment and subscription activation
                 payment.status = "success"
                 payment.save()
 
-                # Create or update enrollment
-                enrollment, created = Enrollment.objects.get_or_create(
-                    user=payment.user,
-                    week=payment.week,
-                    defaults={"plan": payment.plan, "is_active": True},
-                )
-
-                if not created:
-                    enrollment.plan = payment.plan
-                    enrollment.is_active = True
-                    enrollment.save()
-
-                # Send success email using our unified email utility
+                # Send success email
                 try:
+                    # Get the enrollment that was created by the Payment model
+                    enrollment = Enrollment.objects.get(
+                        user=payment.user, week=payment.week
+                    )
                     email_sent = send_manual_payment_approval_email(payment, enrollment)
                     if email_sent:
                         self.message_user(
@@ -101,6 +94,12 @@ class PaymentAdmin(admin.ModelAdmin):
                             f"Payment approved but failed to send email to {payment.user.email}",
                             level="WARNING",
                         )
+                except Enrollment.DoesNotExist:
+                    self.message_user(
+                        request,
+                        f"Payment approved but enrollment not found",
+                        level="WARNING",
+                    )
                 except Exception as e:
                     self.message_user(
                         request,
@@ -122,29 +121,23 @@ class PaymentAdmin(admin.ModelAdmin):
         return redirect("admin:billing_payment_changelist")
 
     def mark_as_success(self, request, queryset):
-        """Admin action to mark payments as success"""
+        """Admin action to mark payments as success - let the Payment model handle the rest"""
         success_count = 0
         email_count = 0
 
         for payment in queryset:
             if payment.status != "success":
+                # Just update the status - the Payment model's save method will handle everything else
                 payment.status = "success"
                 payment.save()
-
-                # Auto-enroll user
-                enrollment, created = Enrollment.objects.get_or_create(
-                    user=payment.user,
-                    week=payment.week,
-                    defaults={"plan": payment.plan, "is_active": True},
-                )
-                if not created:
-                    enrollment.plan = payment.plan
-                    enrollment.is_active = True
-                    enrollment.save()
 
                 # Send appropriate email based on payment method
                 try:
                     if payment.method == "manual_mpesa":
+                        # Get the enrollment that was created by the Payment model
+                        enrollment = Enrollment.objects.get(
+                            user=payment.user, week=payment.week
+                        )
                         email_sent = send_manual_payment_approval_email(
                             payment, enrollment
                         )
