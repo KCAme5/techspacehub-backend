@@ -336,26 +336,35 @@ class WeekSerializer(serializers.ModelSerializer):
     def get_is_enrolled(self, obj):
         request = self.context.get("request")
         if request and request.user.is_authenticated:
-            is_enrolled = Enrollment.objects.filter(
-                user=request.user, week=obj, is_active=True
-            ).exists()
-            print(
-                f"DEBUG: User {request.user.username} enrolled in week {obj.id}: {is_enrolled}"
-            )
-            return is_enrolled
+            try:
+                return Enrollment.objects.filter(
+                    user=request.user, week=obj, is_active=True
+                ).exists()
+            except Exception as e:
+                print(f"Error checking enrollment: {e}")
+                return False
         return False
 
     def get_enrollment_plan(self, obj):
         request = self.context.get("request")
         if request and request.user.is_authenticated:
-            enrollment = Enrollment.objects.filter(
-                user=request.user, week=obj, is_active=True
-            ).first()
-            plan = enrollment.plan if enrollment else None
-            print(
-                f"DEBUG: User {request.user.username} enrollment plan for week {obj.id}: {plan}"
-            )
-            return plan
+            try:
+                enrollment = (
+                    Enrollment.objects.filter(
+                        user=request.user, week=obj, is_active=True
+                    )
+                    .values("id", "plan")
+                    .first()
+                )
+                plan = enrollment["plan"] if enrollment else None
+                print(
+                    f"DEBUG: User {request.user.username} enrollment plan for week {obj.id}: {plan}"
+                )
+                return plan
+            except Exception as e:
+                print(f"Error getting enrollment plan: {e}")
+                return None
+
         return None
 
     def get_progress(self, obj):
