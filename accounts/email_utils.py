@@ -330,7 +330,7 @@ def send_manual_payment_approval_email(payment, enrollment):
 
         Payment Details:
         - Course: {payment.week.course.title if payment.week.course else 'N/A'}
-        - Week: {payment.week.title} ({getattr(payment.week, 'level', 'N/A')})
+        - Module: {payment.week.title} ({getattr(payment.week, 'level', 'N/A')})
         - Plan: {payment.plan}
         - Amount: KES {payment.amount}
         - Payment Method: Manual M-Pesa

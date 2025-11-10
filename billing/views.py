@@ -15,6 +15,7 @@ from base64 import b64encode
 import logging
 from accounts.views import process_referral_commission
 from datetime import timedelta
+from accounts.email_utils import send_payment_confirmation_email
 
 logger = logging.getLogger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -349,6 +350,13 @@ class MpesaCallbackView(APIView):
                 payment.save()
                 logger.info(f"Payment marked as success: {payment.id}")
 
+                send_payment_confirmation_email(
+                    user_email=user.email,
+                    amount=payment.amount,
+                    week_title=str(week),
+                    payment_method="M-Pesa"
+                )
+
                 # Enroll user in week
                 enrollment, created = Enrollment.objects.get_or_create(
                     user=user, week=week, defaults={"plan": plan, "is_active": True}
@@ -630,6 +638,13 @@ class VerifyStripePayment(APIView):
                 payment.save()
                 logger.info(f"Payment record updated: {payment.id}")
 
+                send_payment_confirmation_email(
+                    user_email=user.email,
+                    amount=payment.amount,
+                    week_title=str(week),
+                    payment_method="Stripe"
+                )
+
                 subscription, sub_created = Subscription.objects.get_or_create(
                     user=user,
                     defaults={
@@ -843,7 +858,7 @@ class InitiateManualMpesaPayment(APIView):
             logger.info(f"Manual payment record created: {payment.id}")
 
             # Payment instructions with YOUR ACTUAL PAYBILL
-            paybill_number = "522533"
+            paybill_number = "522522"
             account_number = "1331246156"
 
             instructions = {
