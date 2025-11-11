@@ -3,6 +3,7 @@ from django.utils.text import slugify
 from django.conf import settings
 from django.core.validators import FileExtensionValidator
 from django.utils import timezone
+import uuid
 
 
 class Category(models.Model):
@@ -508,3 +509,272 @@ class Plan(models.Model):
 
     def is_free_plan(self):
         return self.name == "free"
+
+
+class Certificate(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="certificates"
+    )
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE, related_name="certificates"
+    )
+    certificate_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    full_name = models.CharField(max_length=255)
+    email = models.EmailField()
+    issue_date = models.DateTimeField(auto_now_add=True)
+    pdf_file = models.FileField(upload_to="certificates/", null=True, blank=True)
+
+    # Auto-calculated fields
+    completion_date = models.DateTimeField(null=True, blank=True)
+    final_grade = models.FloatField(null=True, blank=True)
+    completion_percentage = models.FloatField(default=0)
+
+    class Meta:
+        unique_together = ["user", "course"]
+        ordering = ["-issue_date"]
+
+    def __str__(self):
+        return f"Certificate for {self.full_name} - {self.course.title}"
+
+    @property
+    def is_completed(self):
+        """Check if the course is completed for certificate generation"""
+        try:
+            weekly_progress = WeeklyProgress.objects.filter(
+                user=self.user, week__course=self.course
+            )
+
+            if not weekly_progress.exists():
+                return False
+
+            total_weeks = Week.objects.filter(course=self.course).count()
+            completed_weeks = weekly_progress.filter(week_completed=True).count()
+
+            return completed_weeks == total_weeks
+        except Exception:
+            return False
+
+    def calculate_final_grade(self):
+        """Calculate final grade based on quizzes and projects"""
+        try:
+            quiz_submissions = WeeklyQuizSubmission.objects.filter(
+                student=self.user, weekly_quiz__week__course=self.course
+            )
+
+            project_submissions = ProjectSubmission.objects.filter(
+                student=self.user,
+                weekly_project__week__course=self.course,
+                status="approved",
+            )
+
+            quiz_scores = [sub.score for sub in quiz_submissions]
+            project_scores = [sub.score for sub in project_submissions if sub.score]
+
+            quiz_avg = sum(quiz_scores) / len(quiz_scores) if quiz_scores else 0
+            project_avg = (
+                sum(project_scores) / len(project_scores) if project_scores else 0
+            )
+
+            if quiz_scores and project_scores:
+                final_grade = (quiz_avg * 0.6) + (project_avg * 0.4)
+            elif quiz_scores:
+                final_grade = quiz_avg
+            elif project_scores:
+                final_grade = project_avg
+            else:
+                final_grade = 0
+
+            return round(final_grade, 2)
+        except Exception:
+            return None
+
+
+class CertificateRequest(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="certificate_requests",
+    )
+    course = models.ForeignKey(
+        Course, on_delete=models.CASCADE, related_name="certificate_requests"
+    )
+    full_name = models.CharField(max_length=255)
+    email = models.EmailField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    created_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Certificate Request - {self.user.username} - {self.course.title}"
+
+
+# Points and Rewards System
+class UserPoints(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="points"
+    )
+    total_points = models.PositiveIntegerField(default=0)
+    available_points = models.PositiveIntegerField(default=0)
+    redeemed_points = models.PositiveIntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name_plural = "User points"
+
+    def __str__(self):
+        return f"{self.user.username} - {self.available_points} points"
+
+    def add_points(self, points, reason=""):
+        """Add points to user balance"""
+        self.total_points += points
+        self.available_points += points
+        self.save()
+
+        # Create transaction record
+        PointTransaction.objects.create(
+            user=self.user,
+            points=points,
+            transaction_type="earn",
+            reason=reason,
+            balance_after=self.available_points,
+        )
+
+    def redeem_points(self, points, reason=""):
+        """Redeem points from user balance"""
+        if points > self.available_points:
+            raise ValueError("Insufficient points")
+
+        self.available_points -= points
+        self.redeemed_points += points
+        self.save()
+
+        # Create transaction record
+        PointTransaction.objects.create(
+            user=self.user,
+            points=-points,
+            transaction_type="redeem",
+            reason=reason,
+            balance_after=self.available_points,
+        )
+
+
+class PointTransaction(models.Model):
+    TRANSACTION_TYPES = [
+        ("earn", "Earned"),
+        ("redeem", "Redeemed"),
+        ("bonus", "Bonus"),
+        ("penalty", "Penalty"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="point_transactions",
+    )
+    points = models.IntegerField()  # Positive for earn, negative for redeem
+    transaction_type = models.CharField(max_length=10, choices=TRANSACTION_TYPES)
+    reason = models.CharField(max_length=255)
+    balance_after = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Reference to related object (optional)
+    content_type = models.ForeignKey(
+        "contenttypes.ContentType", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    object_id = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        sign = "+" if self.points > 0 else ""
+        return f"{self.user.username} - {sign}{self.points} points - {self.reason}"
+
+
+class Reward(models.Model):
+    REWARD_TYPES = [
+        ("cash", "Cash"),
+        ("voucher", "Gift Voucher"),
+        ("course", "Free Course"),
+        ("badge", "Badge"),
+        ("other", "Other"),
+    ]
+
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    reward_type = models.CharField(max_length=20, choices=REWARD_TYPES)
+    points_required = models.PositiveIntegerField()
+    cash_value = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Cash value in USD",
+    )
+    is_active = models.BooleanField(default=True)
+    quantity_available = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Null means unlimited"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["points_required"]
+
+    def __str__(self):
+        return f"{self.name} - {self.points_required} points"
+
+
+class RewardRedemption(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("processing", "Processing"),
+        ("completed", "Completed"),
+        ("cancelled", "Cancelled"),
+        ("failed", "Failed"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reward_redemptions",
+    )
+    reward = models.ForeignKey(
+        Reward, on_delete=models.CASCADE, related_name="redemptions"
+    )
+    points_used = models.PositiveIntegerField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    redemption_code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    # For cash rewards
+    payout_method = models.CharField(
+        max_length=100, blank=True, help_text="PayPal, Bank Transfer, etc."
+    )
+    payout_details = models.JSONField(
+        null=True, blank=True, help_text="Payment account details"
+    )
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        return f"{self.user.username} - {self.reward.name} - {self.status}"
+
+    def save(self, *args, **kwargs):
+        if self.status == "completed" and not self.processed_at:
+            self.processed_at = timezone.now()
+        super().save(*args, **kwargs)
