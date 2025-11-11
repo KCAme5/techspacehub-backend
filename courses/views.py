@@ -8,51 +8,14 @@ from django.utils import timezone
 from statistics import mean
 from rest_framework.parsers import MultiPartParser, FormParser
 import random
+from django.db.models.signals import post_save
+from django.db import transaction
+from django.db.models import Sum
+from django.http import FileResponse
 
-from .models import (
-    Category,
-    Course,
-    Week,
-    Lesson,
-    Enrollment,
-    Progress,
-    WeeklyProgress,
-    WeeklyQuiz,
-    WeeklyProject,
-    QuizQuestion,
-    QuestionChoice,
-    WeeklyQuizSubmission,
-    ProjectSubmission,
-    StudentAnswer,
-    Plan,
-    ProjectFeedback,
-    Notification,
-)
-from .serializers import (
-    EnrollmentDashboardSerializer,
-    CategorySerializer,
-    CourseSerializer,
-    CourseListSerializer,
-    WeekSerializer,
-    LessonSerializer,
-    EnrollmentSerializer,
-    EnrollmentCreateSerializer,
-    ProgressSerializer,
-    WeeklyProgressSerializer,
-    WeeklyQuizSerializer,
-    WeeklyProjectSerializer,
-    QuizQuestionSerializer,
-    WeeklyQuizSubmissionSerializer,
-    WeeklyQuizSubmissionDetailSerializer,
-    ProjectSubmissionSerializer,
-    StudentAnswerSerializer,
-    CoursePerformanceQuizSerializer,
-    CoursePerformanceSerializer,
-    PlanSerializer,
-    ProjectFeedbackSerializer,
-    NotificationSerializer,
-    QuestionChoiceSerializer,
-)
+
+from .models import *
+from .serializers import *
 
 
 # Category listing
@@ -887,3 +850,329 @@ class WeekLessonsList(generics.ListAPIView):
             return Lesson.objects.none()
 
         return Lesson.objects.filter(week_id=week_id).order_by("order")
+
+
+# Certificate Views
+class CertificateListView(generics.ListAPIView):
+    serializer_class = CertificateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Certificate.objects.filter(user=self.request.user).select_related(
+            "course"
+        )
+
+
+class CompletedCoursesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        completed_courses = []
+
+        # Get all courses the user is enrolled in
+        enrolled_courses = Course.objects.filter(
+            weeks__enrollments__user=user, weeks__enrollments__is_active=True
+        ).distinct()
+
+        for course in enrolled_courses:
+            # Get all weekly progress for this course
+            weekly_progress = WeeklyProgress.objects.filter(
+                user=user, week__course=course
+            )
+
+            total_weeks = Week.objects.filter(course=course).count()
+            completed_weeks = weekly_progress.filter(week_completed=True).count()
+
+            completion_percentage = (
+                (completed_weeks / total_weeks * 100) if total_weeks > 0 else 0
+            )
+            is_completed = completed_weeks == total_weeks
+
+            # Get the completion date (latest week completion date)
+            completion_date = None
+            if is_completed:
+                latest_completion = (
+                    weekly_progress.filter(week_completed=True)
+                    .order_by("-completed_at")
+                    .first()
+                )
+                completion_date = (
+                    latest_completion.completed_at if latest_completion else None
+                )
+
+            completed_courses.append(
+                {
+                    "course_id": course.id,
+                    "course_title": course.title,
+                    "completed_at": completion_date,
+                    "completion_percentage": round(completion_percentage, 2),
+                    "is_eligible_for_certificate": is_completed,
+                }
+            )
+
+        serializer = CompletedCourseSerializer(completed_courses, many=True)
+        return Response(serializer.data)
+
+
+class GenerateCertificateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = CertificateGenerateSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            course_id = serializer.validated_data["course_id"]
+            full_name = serializer.validated_data["full_name"]
+            email = serializer.validated_data["email"]
+
+            try:
+                course = Course.objects.get(id=course_id)
+            except Course.DoesNotExist:
+                return Response(
+                    {"error": "Course not found"}, status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Check if certificate already exists
+            if Certificate.objects.filter(user=user, course=course).exists():
+                return Response(
+                    {"error": "Certificate already exists for this course"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Check if course is completed
+            weekly_progress = WeeklyProgress.objects.filter(
+                user=user, week__course=course
+            )
+            total_weeks = Week.objects.filter(course=course).count()
+            completed_weeks = weekly_progress.filter(week_completed=True).count()
+
+            if completed_weeks != total_weeks:
+                return Response(
+                    {
+                        "error": "Course not completed",
+                        "message": f"You need to complete all {total_weeks} weeks to generate a certificate. You have completed {completed_weeks} out of {total_weeks} weeks.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Calculate final grade
+            final_grade = self.calculate_final_grade(user, course)
+
+            # Get completion date
+            completion_date = (
+                weekly_progress.filter(week_completed=True)
+                .order_by("-completed_at")
+                .first()
+                .completed_at
+            )
+
+            # Create certificate
+            with transaction.atomic():
+                certificate = Certificate.objects.create(
+                    user=user,
+                    course=course,
+                    full_name=full_name,
+                    email=email,
+                    completion_date=completion_date,
+                    final_grade=final_grade,
+                    completion_percentage=100.0,
+                )
+
+                # Create certificate request
+                CertificateRequest.objects.create(
+                    user=user,
+                    course=course,
+                    full_name=full_name,
+                    email=email,
+                    status="completed",
+                )
+
+            # Return certificate data (PDF generation can be handled asynchronously)
+            certificate_serializer = CertificateSerializer(certificate)
+            return Response(
+                {
+                    "success": True,
+                    "message": "Certificate generated successfully",
+                    "certificate": certificate_serializer.data,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def calculate_final_grade(self, user, course):
+        """Calculate final grade based on quizzes and projects"""
+        try:
+            quiz_submissions = WeeklyQuizSubmission.objects.filter(
+                student=user, weekly_quiz__week__course=course
+            )
+
+            project_submissions = ProjectSubmission.objects.filter(
+                student=user, weekly_project__week__course=course, status="approved"
+            )
+
+            quiz_scores = [sub.score for sub in quiz_submissions]
+            project_scores = [sub.score for sub in project_submissions if sub.score]
+
+            quiz_avg = sum(quiz_scores) / len(quiz_scores) if quiz_scores else 0
+            project_avg = (
+                sum(project_scores) / len(project_scores) if project_scores else 0
+            )
+
+            if quiz_scores and project_scores:
+                final_grade = (quiz_avg * 0.6) + (project_avg * 0.4)
+            elif quiz_scores:
+                final_grade = quiz_avg
+            elif project_scores:
+                final_grade = project_avg
+            else:
+                final_grade = 0
+
+            return round(final_grade, 2)
+        except Exception:
+            return None
+
+
+class CertificateDownloadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, certificate_id):
+        try:
+            certificate = Certificate.objects.get(
+                certificate_id=certificate_id, user=request.user
+            )
+
+            if certificate.pdf_file:
+                # Return PDF file for download
+                response = FileResponse(certificate.pdf_file.open(), as_attachment=True)
+                response["Content-Disposition"] = (
+                    f'attachment; filename="certificate_{certificate.certificate_id}.pdf"'
+                )
+                return response
+            else:
+                return Response(
+                    {"error": "PDF certificate not yet generated"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+        except Certificate.DoesNotExist:
+            return Response(
+                {"error": "Certificate not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class CertificatePreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, certificate_id):
+        try:
+            certificate = Certificate.objects.get(
+                certificate_id=certificate_id, user=request.user
+            )
+
+            serializer = CertificateSerializer(certificate)
+            return Response(serializer.data)
+
+        except Certificate.DoesNotExist:
+            return Response(
+                {"error": "Certificate not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+# Points and Rewards Views
+class UserPointsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user_points, created = UserPoints.objects.get_or_create(user=request.user)
+        serializer = UserPointsSerializer(user_points)
+        return Response(serializer.data)
+
+
+class PointTransactionListView(generics.ListAPIView):
+    serializer_class = PointTransactionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return PointTransaction.objects.filter(user=self.request.user)
+
+
+class RewardListView(generics.ListAPIView):
+    serializer_class = RewardSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Reward.objects.filter(is_active=True)
+
+
+class RewardRedemptionListView(generics.ListAPIView):
+    serializer_class = RewardRedemptionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return RewardRedemption.objects.filter(user=self.request.user)
+
+
+class RewardRedemptionCreateView(generics.CreateAPIView):
+    serializer_class = RewardRedemptionCreateSerializer
+    permission_classes = [IsAuthenticated]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        reward = serializer.validated_data["reward"]
+        payout_method = serializer.validated_data.get("payout_method", "")
+        payout_details = serializer.validated_data.get("payout_details")
+
+        with transaction.atomic():
+            # Get user points
+            user_points = UserPoints.objects.get(user=user)
+
+            # Create redemption record
+            redemption = RewardRedemption.objects.create(
+                user=user,
+                reward=reward,
+                points_used=reward.points_required,
+                payout_method=payout_method,
+                payout_details=payout_details,
+            )
+
+            # Deduct points
+            user_points.redeem_points(
+                reward.points_required, f"Redeemed: {reward.name}"
+            )
+
+        # Return redemption details
+        redemption_serializer = RewardRedemptionSerializer(redemption)
+        return Response(
+            {
+                "success": True,
+                "message": f"Successfully redeemed {reward.points_required} points for {reward.name}",
+                "redemption": redemption_serializer.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+# Signal-like functionality to award points for project submissions
+def award_project_points(sender, instance, created, **kwargs):
+    """Award 500 points when a project is approved"""
+    if instance.status == "approved" and not getattr(
+        instance, "_points_awarded", False
+    ):
+        try:
+            user_points, created = UserPoints.objects.get_or_create(
+                user=instance.student
+            )
+            user_points.add_points(
+                500, f"Project completion: {instance.weekly_project.title}"
+            )
+            instance._points_awarded = True  # Prevent duplicate awards
+        except Exception as e:
+            print(f"Error awarding points: {e}")
+
+
+post_save.connect(award_project_points, sender=ProjectSubmission)

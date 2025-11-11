@@ -138,4 +138,44 @@ urlpatterns = [
         name="course-performance",
     ),
     path("staff/", include("courses.urls_staff")),
+    # Certificate URLs
+    path("certificates/", views.CertificateListView.as_view(), name="certificate-list"),
+    path(
+        "certificates/generate/",
+        views.GenerateCertificateView.as_view(),
+        name="generate-certificate",
+    ),
+    path(
+        "certificates/<uuid:certificate_id>/download/",
+        views.CertificateDownloadView.as_view(),
+        name="download-certificate",
+    ),
+    path(
+        "certificates/<uuid:certificate_id>/preview/",
+        views.CertificatePreviewView.as_view(),
+        name="certificate-preview",
+    ),
+    path(
+        "courses/completed/",
+        views.CompletedCoursesView.as_view(),
+        name="completed-courses",
+    ),
+    # Points and Rewards URLs
+    path("points/", views.UserPointsView.as_view(), name="user-points"),
+    path(
+        "points/transactions/",
+        views.PointTransactionListView.as_view(),
+        name="point-transactions",
+    ),
+    path("rewards/", views.RewardListView.as_view(), name="reward-list"),
+    path(
+        "rewards/redemptions/",
+        views.RewardRedemptionListView.as_view(),
+        name="reward-redemption-list",
+    ),
+    path(
+        "rewards/redemptions/create/",
+        views.RewardRedemptionCreateView.as_view(),
+        name="reward-redemption-create",
+    ),
 ]

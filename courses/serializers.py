@@ -2,25 +2,7 @@
 from rest_framework import serializers
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import (
-    Category,
-    Course,
-    Week,
-    Lesson,
-    Enrollment,
-    Progress,
-    WeeklyProgress,
-    WeeklyQuiz,
-    WeeklyProject,
-    QuizQuestion,
-    QuestionChoice,
-    WeeklyQuizSubmission,
-    ProjectSubmission,
-    StudentAnswer,
-    Plan,
-    ProjectFeedback,
-    Notification,
-)
+from .models import *
 
 
 User = get_user_model()
@@ -737,3 +719,210 @@ class CoursePerformanceSerializer(serializers.Serializer):
     total_projects = serializers.IntegerField()
     overall_completion = serializers.FloatField()
     quizzes = CoursePerformanceQuizSerializer(many=True)
+
+
+# Certificate Serializers
+class CertificateSerializer(serializers.ModelSerializer):
+    course_title = serializers.CharField(source="course.title", read_only=True)
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+    verification_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Certificate
+        fields = [
+            "id",
+            "certificate_id",
+            "user",
+            "user_name",
+            "course",
+            "course_title",
+            "full_name",
+            "email",
+            "issue_date",
+            "completion_date",
+            "final_grade",
+            "completion_percentage",
+            "pdf_file",
+            "verification_url",
+        ]
+        read_only_fields = [
+            "certificate_id",
+            "issue_date",
+            "completion_date",
+            "final_grade",
+            "completion_percentage",
+        ]
+
+    def get_verification_url(self, obj):
+        return f"/verify/certificate/{obj.certificate_id}/"
+
+
+class CertificateRequestSerializer(serializers.ModelSerializer):
+    course_title = serializers.CharField(source="course.title", read_only=True)
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+
+    class Meta:
+        model = CertificateRequest
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "course",
+            "course_title",
+            "full_name",
+            "email",
+            "status",
+            "created_at",
+            "processed_at",
+            "error_message",
+        ]
+        read_only_fields = [
+            "user",
+            "status",
+            "created_at",
+            "processed_at",
+            "error_message",
+        ]
+
+
+class CertificateGenerateSerializer(serializers.Serializer):
+    course_id = serializers.IntegerField()
+    full_name = serializers.CharField(max_length=255)
+    email = serializers.EmailField()
+
+    def validate_course_id(self, value):
+        if not Course.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Course not found.")
+        return value
+
+
+# Points and Rewards Serializers
+class UserPointsSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+
+    class Meta:
+        model = UserPoints
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "total_points",
+            "available_points",
+            "redeemed_points",
+            "last_updated",
+        ]
+        read_only_fields = [
+            "user",
+            "total_points",
+            "available_points",
+            "redeemed_points",
+            "last_updated",
+        ]
+
+
+class PointTransactionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PointTransaction
+        fields = [
+            "id",
+            "points",
+            "transaction_type",
+            "reason",
+            "balance_after",
+            "created_at",
+        ]
+        read_only_fields = ["balance_after", "created_at"]
+
+
+class RewardSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Reward
+        fields = [
+            "id",
+            "name",
+            "description",
+            "reward_type",
+            "points_required",
+            "cash_value",
+            "is_active",
+            "quantity_available",
+            "created_at",
+        ]
+
+
+class RewardRedemptionSerializer(serializers.ModelSerializer):
+    reward_name = serializers.CharField(source="reward.name", read_only=True)
+    reward_type = serializers.CharField(source="reward.reward_type", read_only=True)
+    user_name = serializers.CharField(source="user.get_full_name", read_only=True)
+
+    class Meta:
+        model = RewardRedemption
+        fields = [
+            "id",
+            "user",
+            "user_name",
+            "reward",
+            "reward_name",
+            "reward_type",
+            "points_used",
+            "status",
+            "redemption_code",
+            "requested_at",
+            "processed_at",
+            "notes",
+            "payout_method",
+            "payout_details",
+        ]
+        read_only_fields = [
+            "user",
+            "points_used",
+            "redemption_code",
+            "requested_at",
+            "processed_at",
+        ]
+
+
+class RewardRedemptionCreateSerializer(serializers.ModelSerializer):
+    payout_method = serializers.CharField(required=False, allow_blank=True)
+    payout_details = serializers.JSONField(required=False)
+
+    class Meta:
+        model = RewardRedemption
+        fields = ["reward", "payout_method", "payout_details"]
+
+    def validate(self, data):
+        user = self.context["request"].user
+        reward = data["reward"]
+
+        # Check if user has enough points
+        user_points = UserPoints.objects.get(user=user)
+        if user_points.available_points < reward.points_required:
+            raise serializers.ValidationError("Insufficient points for this reward.")
+
+        # Check if reward is available
+        if not reward.is_active:
+            raise serializers.ValidationError("This reward is no longer available.")
+
+        # Check quantity if limited
+        if reward.quantity_available is not None:
+            redeemed_count = RewardRedemption.objects.filter(
+                reward=reward, status__in=["pending", "processing", "completed"]
+            ).count()
+            if redeemed_count >= reward.quantity_available:
+                raise serializers.ValidationError("This reward is out of stock.")
+
+        # Validate payout details for cash rewards
+        if reward.reward_type == "cash" and not data.get("payout_method"):
+            raise serializers.ValidationError(
+                "Payout method is required for cash rewards."
+            )
+
+        return data
+
+
+class CompletedCourseSerializer(serializers.Serializer):
+    course_id = serializers.IntegerField()
+    course_title = serializers.CharField()
+    completed_at = serializers.DateTimeField()
+    completion_percentage = serializers.FloatField()
+    is_eligible_for_certificate = serializers.BooleanField()
