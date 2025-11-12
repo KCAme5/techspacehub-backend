@@ -1,16 +1,20 @@
 services:
   - type: web
-    name: cybercraft-backend
+    name: cybercraft-back
     env: python
     plan: free
-    buildCommand: |
-      pip install -r requirements.txt
-      python manage.py collectstatic --noinput
-    startCommand: gunicorn cybercraft.wsgi:application
+    buildCommand: pip install -r requirements.txt && python manage.py migrate
+    startCommand: gunicorn cybercraft.wsgi:application --bind 0.0.0.0:$PORT
     envVars:
-      - key: DEBUG
+      - key: PYTHON_VERSION
+        value: 3.11.6
+        key: DEBUG
         value: "False"
       - key: SECRET_KEY
         generateValue: true
       - key: WEB_CONCURRENCY
         value: 4
+
+    
+    healthCheckPath: /health/
+    preDeployCommand: echo "client_max_body_size 10M;" > nginx.conf && cat nginx.conf
