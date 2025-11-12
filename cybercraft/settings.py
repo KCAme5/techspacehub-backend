@@ -84,6 +84,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "accounts.middleware.SocialAuthRedirectMiddleware",
+    # "middleware.large_request.LargeRequestMiddleware",
 ]
 
 ROOT_URLCONF = "cybercraft.urls"
@@ -222,7 +223,6 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.techspacehub.co.ke",
 ]
 
-CORS_ALLOW_CREDENTIALS = True
 
 # REST Framework
 REST_FRAMEWORK = {
