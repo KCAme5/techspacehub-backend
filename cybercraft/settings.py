@@ -174,7 +174,15 @@ LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 ACCOUNT_LOGOUT_REDIRECT_URL = f"{FRONTEND_URL}/login"
 SOCIALACCOUNT_LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
+# Combine ALLOWED_HOSTS from environment variable and hardcoded ones
+env_allowed_hosts = os.getenv("ALLOWED_HOSTS", "").split(",")
+ALLOWED_HOSTS = [
+    "cybercraft-back.onrender.com",
+    "techspacehub.co.ke",
+    "www.techspacehub.co.ke",
+    "api.techspacehub.co.ke",
+] + [host for host in env_allowed_hosts if host]
+
 # CORS settings - PRODUCTION
 CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
@@ -183,6 +191,30 @@ CORS_ALLOWED_ORIGINS = [
     "https://cybercraft-back.onrender.com",
 ]
 
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+ALLOWED_HOSTS = list(set(ALLOWED_HOSTS))
 CSRF_TRUSTED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
