@@ -180,12 +180,14 @@ CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
+    "https://cybercraft-back.onrender.com",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://cybercraft-back.onrender.com",
+    "https://api.techspacehub.co.ke",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
