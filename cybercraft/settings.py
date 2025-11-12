@@ -277,6 +277,7 @@ SIMPLE_JWT = {
 # File upload limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10240
 
 # Security - PRODUCTION
 if not DEBUG:
@@ -334,3 +335,13 @@ LOGGING = {
         },
     },
 }
+
+# For Render.com and other cloud platforms
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# Increase request size for cloud platforms
+if not DEBUG:
+    # These help with larger requests on cloud platforms
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

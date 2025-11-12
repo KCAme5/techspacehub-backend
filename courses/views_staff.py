@@ -113,6 +113,17 @@ class StaffLessonViewSet(ModelViewSet):
             queryset = queryset.filter(week_id=week_id)
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        print(f"Create lesson - Content length: {len(request.data.get('content', ''))}")
+        print(f"Request method: {request.method}")
+        print(f"User: {request.user}")
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        print(f"Update lesson - Content length: {len(request.data.get('content', ''))}")
+        print(f"Lesson ID: {kwargs.get('pk')}")
+        return super().update(request, *args, **kwargs)
+
 
 class StaffWeeklyQuizViewSet(ModelViewSet):
     permission_classes = [IsStaffUser]
