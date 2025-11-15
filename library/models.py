@@ -14,7 +14,7 @@ class Resource(models.Model):
         ("general", "General Tech"),
     ]
 
-    id = models.BigAutoAutoField(primary_key=True)
+    id = models.BigAutoField(primary_key=True)
     uuid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
