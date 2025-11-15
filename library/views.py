@@ -207,7 +207,7 @@ class FavoriteResourceViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 
-class StaffResourceViewSet(viewsets.ModelViewSet):
+'''class StaffResourceViewSet(viewsets.ModelViewSet):
     """
     ViewSet for staff to manage library resources
     """
@@ -231,6 +231,44 @@ class StaffResourceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Get library statistics"""
+        total_resources = Resource.objects.count()
+        public_resources = Resource.objects.filter(is_public=True).count()
+        total_views = (
+            Resource.objects.aggregate(total_views=models.Sum("view_count"))[
+                "total_views"
+            ]
+            or 0
+        )
+
+        return Response(
+            {
+                "total_resources": total_resources,
+                "public_resources": public_resources,
+                "total_views": total_views,
+                "categories": dict(Resource.CATEGORY_CHOICES),
+            }
+        )
+'''
+
+
+class StaffResourceViewSet(viewsets.ModelViewSet):
+    queryset = Resource.objects.all().order_by("-upload_date")
+    permission_classes = [IsStaffUser]
+
+    def get_serializer_class(self):
+        if self.action in ["create", "update", "partial_update"]:
+            return StaffResourceCreateSerializer
+        return StaffResourceSerializer
+
+    def perform_create(self, serializer):
+        serializer.save()
+
+    @action(detail=False, methods=["get"])
+    def categories(self, request):
+        return Response(dict(Resource.CATEGORY_CHOICES))
+
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
         total_resources = Resource.objects.count()
         public_resources = Resource.objects.filter(is_public=True).count()
         total_views = (

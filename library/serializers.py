@@ -28,7 +28,7 @@ class ResourceViewLogSerializer(serializers.ModelSerializer):
 class FavoriteResourceSerializer(serializers.ModelSerializer):
     resource_title = serializers.CharField(source="resource.title", read_only=True)
     category = serializers.CharField(source="resource.category", read_only=True)
-    thumbnail = serializers.ImageField(source="resource.thumbnail", read_only=True)
+    thumbnail = serializers.URLField(source="resource.thumbnail", read_only=True)
 
     class Meta:
         model = FavoriteResource
@@ -44,7 +44,7 @@ class FavoriteResourceSerializer(serializers.ModelSerializer):
         read_only_fields = ["user", "added_at"]
 
 
-class StaffResourceCreateSerializer(serializers.ModelSerializer):
+'''class StaffResourceCreateSerializer(serializers.ModelSerializer):
     """Serializer for staff to create/update resources"""
 
     class Meta:
@@ -59,6 +59,7 @@ class StaffResourceCreateSerializer(serializers.ModelSerializer):
             "author",
             "is_public",
         ]
+'''
 
 
 class StaffResourceSerializer(serializers.ModelSerializer):
@@ -90,17 +91,63 @@ class StaffResourceSerializer(serializers.ModelSerializer):
         ]
 
     def get_file_url(self, obj):
-        request = self.context.get("request")
-        if obj.file and hasattr(obj.file, "url"):
-            return request.build_absolute_uri(obj.file.url) if request else obj.file.url
-        return None
+        return obj.file
 
     def get_thumbnail_url(self, obj):
-        request = self.context.get("request")
-        if obj.thumbnail and hasattr(obj.thumbnail, "url"):
-            return (
-                request.build_absolute_uri(obj.thumbnail.url)
-                if request
-                else obj.thumbnail.url
-            )
-        return None
+        return obj.thumbnail
+
+
+class StaffResourceCreateSerializer(serializers.ModelSerializer):
+    """
+    Staff upload serializer — only essential fields.
+    File + thumbnail accept URLs instead of file uploads.
+    Description optional.
+    """
+
+    file = serializers.URLField(required=False, allow_null=True)
+    thumbnail = serializers.URLField(required=False, allow_null=True)
+    description = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+
+    class Meta:
+        model = Resource
+        fields = [
+            "title",
+            "description",  # optional
+            "file",  # URL
+            "thumbnail",  # URL
+            "category",
+            "course",
+        ]
+
+    def create(self, validated_data):
+        # Save URLs directly into the file/image fields
+        file_url = validated_data.pop("file", None)
+        thumbnail_url = validated_data.pop("thumbnail", None)
+
+        resource = Resource.objects.create(**validated_data)
+
+        # Assign URLs manually
+        if file_url:
+            resource.file = file_url
+        if thumbnail_url:
+            resource.thumbnail = thumbnail_url
+
+        resource.save()
+        return resource
+
+    def update(self, instance, validated_data):
+        file_url = validated_data.pop("file", None)
+        thumbnail_url = validated_data.pop("thumbnail", None)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        if file_url:
+            instance.file = file_url
+        if thumbnail_url:
+            instance.thumbnail = thumbnail_url
+
+        instance.save()
+        return instance
