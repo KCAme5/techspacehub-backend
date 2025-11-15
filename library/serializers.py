@@ -83,7 +83,6 @@ class StaffResourceSerializer(serializers.ModelSerializer):
             "category",
             "course",
             "course_title",
-            "author",
             "is_public",
             "view_count",
             "upload_date",
