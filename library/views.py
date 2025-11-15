@@ -16,55 +16,6 @@ from .serializers import (
     StaffResourceCreateSerializer,
 )
 
-"""
-class ResourceViewSet(viewsets.ModelViewSet):
-    queryset = Resource.objects.all().order_by("-upload_date")
-    serializer_class = ResourceSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_authenticated:
-            # Show all public + enrolled resources (for now: all)
-            return Resource.objects.all()
-        return Resource.objects.filter(is_public=True)
-
-    @action(
-        detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
-    )
-    def view_log(self, request, pk=None):
-        resource = self.get_object()
-        ResourceViewLog.objects.create(
-            user=request.user, resource=resource, action="viewed"
-        )
-        resource.view_count += 1
-        resource.save()
-        return Response({"message": "View logged successfully."})
-
-    @action(
-        detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
-    )
-    def download_log(self, request, pk=None):
-        resource = self.get_object()
-        ResourceViewLog.objects.create(
-            user=request.user, resource=resource, action="downloaded"
-        )
-        return Response({"message": "Download logged successfully."})
-
-    @action(
-        detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
-    )
-    def toggle_favorite(self, request, pk=None):
-        resource = self.get_object()
-        favorite, created = FavoriteResource.objects.get_or_create(
-            user=request.user, resource=resource
-        )
-        if not created:
-            favorite.delete()
-            return Response({"message": "Removed from favorites."})
-        return Response({"message": "Added to favorites."})
-"""
-
 
 class ResourceViewSet(viewsets.ModelViewSet):
     queryset = Resource.objects.all().order_by("-upload_date")
@@ -91,20 +42,9 @@ class ResourceViewSet(viewsets.ModelViewSet):
                 # Staff can see all resources
                 return queryset
             else:
-                # Regular users see public resources + their enrolled courses
-                from courses.models import (
-                    Subscription,
-                )  # Import here to avoid circular import
-
-                # Get user's enrolled courses
-                enrolled_courses = Subscription.objects.filter(
-                    user=user, is_active=True
-                ).values_list("course", flat=True)
-
-                # Show public resources OR resources from enrolled courses
-                queryset = queryset.filter(
-                    models.Q(is_public=True) | models.Q(course_id__in=enrolled_courses)
-                )
+                # Regular users see public resources
+                # Remove subscription logic since it's not available
+                queryset = queryset.filter(is_public=True)
         else:
             # Anonymous users only see public resources
             queryset = queryset.filter(is_public=True)
@@ -205,50 +145,6 @@ class FavoriteResourceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-
-
-'''class StaffResourceViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for staff to manage library resources
-    """
-
-    queryset = Resource.objects.all().order_by("-upload_date")
-    permission_classes = [IsStaffUser]
-
-    def get_serializer_class(self):
-        if self.action in ["create", "update", "partial_update"]:
-            return StaffResourceCreateSerializer
-        return StaffResourceSerializer
-
-    def perform_create(self, serializer):
-        serializer.save()
-
-    @action(detail=False, methods=["get"])
-    def categories(self, request):
-        """Get available categories"""
-        return Response(dict(Resource.CATEGORY_CHOICES))
-
-    @action(detail=False, methods=["get"])
-    def stats(self, request):
-        """Get library statistics"""
-        total_resources = Resource.objects.count()
-        public_resources = Resource.objects.filter(is_public=True).count()
-        total_views = (
-            Resource.objects.aggregate(total_views=models.Sum("view_count"))[
-                "total_views"
-            ]
-            or 0
-        )
-
-        return Response(
-            {
-                "total_resources": total_resources,
-                "public_resources": public_resources,
-                "total_views": total_views,
-                "categories": dict(Resource.CATEGORY_CHOICES),
-            }
-        )
-'''
 
 
 class StaffResourceViewSet(viewsets.ModelViewSet):
