@@ -7,14 +7,10 @@ from django.utils import timezone
 
 class Resource(models.Model):
     CATEGORY_CHOICES = [
-        ("python", "Python"),
-        ("ethicalhacking", "Ethical Hacking"),
         ("programming", "Programming"),
         ("artificialintelligence", "Artificial Intelligence"),
         ("machinelearning", "Machine Learning"),
-        ("networking", "Networking"),
         ("cybersecurity", "Cyber Security"),
-        ("webdev", "Web Development"),
         ("general", "General Tech"),
     ]
 
@@ -59,7 +55,6 @@ class Resource(models.Model):
         if not self.course:
             return False
 
-        # Example: you can later connect this to your subscription or enrollment model
         # sub = Subscription.objects.filter(
         #     user=user, course=self.course, is_active=True
         # ).first()
@@ -67,7 +62,16 @@ class Resource(models.Model):
         #     return False
         # return sub.plan.can_access_library
 
-        return False  # default fallback for now
+        return False
+
+    def is_accessible_by(self, user):
+        """
+        Check if user can access this resource
+        Staff can access all resources
+        """
+        if user.is_staff:
+            return True
+        return self.available_for_user(user)
 
 
 class UserBookProgress(models.Model):

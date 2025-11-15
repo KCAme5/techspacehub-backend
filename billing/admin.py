@@ -70,8 +70,7 @@ class PaymentAdmin(admin.ModelAdmin):
         try:
             payment = Payment.objects.get(id=payment_id)
             if payment.method == "manual_mpesa" and payment.status == "pending":
-                # Update payment status - this will trigger the model's save method
-                # which will automatically handle enrollment and subscription activation
+                
                 payment.status = "success"
                 payment.save()
 

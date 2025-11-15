@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.utils import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from courses.models import Enrollment
 
 
 class User(AbstractUser):
@@ -61,6 +62,16 @@ class User(AbstractUser):
         self.save(
             update_fields=["failed_login_attempts", "last_failed_login", "locked_until"]
         )
+    
+    def has_lifetime_access(self, week):
+        try:
+            enrollment = self.enrollments.get(week=week)
+            return enrollment.is_lifetime_access
+        except Enrollment.DoesNotExist:
+            return False
+    
+    def get_active_enrollments(self):
+        return self.enrollments.filter(is_active=True)
 
     def __str__(self):
         return f"{self.username} ({self.role}) - {self.subscription_plan}"
@@ -247,3 +258,5 @@ class WithdrawalRequest(models.Model):
 def create_user_wallet(sender, instance, created, **kwargs):
     if created:
         Wallet.objects.create(user=instance)
+
+

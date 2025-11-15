@@ -84,58 +84,6 @@ class RegisterSerializer(serializers.ModelSerializer):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         send_verification_email(user.email, uid, token)
 
-        '''frontend_url = getattr(settings, "FRONTEND_URL", "https://techspacehub.co.ke")
-        verify_link = f"{frontend_url}/verify-email/{uid}/{token}/"
-
-        # HTML email content
-        subject = "Verify Your TechSpace Hub Account"
-        html_message = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                .button {{ background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Welcome to TechSpace Hub!</h1>
-                </div>
-                <div class="content">
-                    <h2>Verify Your Email Address</h2>
-                    <p>Click the button below to verify your email:</p>
-                    <div style="text-align: center;">
-                        <a href="{verify_link}" class="button">Verify Email</a>
-                    </div>
-                    <p>Or copy this link: {verify_link}</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-
-        plain_message = f"Verify your TechSpace Hub account: {verify_link}"
-
-        try:
-            send_mail(
-                subject=subject,
-                message=plain_message,
-                from_email=getattr(
-                    settings, "DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke"
-                ),
-                recipient_list=[user.email],
-                html_message=html_message,
-                fail_silently=False,
-            )
-            logger.info(f"Verification email sent to {user.email}")
-        except Exception as e:
-            logger.error(f"Failed to send verification email to {user.email}: {str(e)}")'''
-
         return user
 
 
@@ -179,62 +127,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
 
             send_password_reset_email(user.email, uid, token)
-
-            '''frontend_url = getattr(
-                settings, "FRONTEND_URL", "https://techspacehub.co.ke"
-            )
-            reset_link = f"{frontend_url}/password-reset-confirm/{uid}/{token}/"
-
-            # HTML email content
-            subject = "Reset Your TechSpace Hub Password"
-            html_message = f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-                    .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-                    .header {{ background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }}
-                    .content {{ background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }}
-                    .button {{ background: #f5576c; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 20px 0; }}
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <div class="header">
-                        <h1>Password Reset</h1>
-                    </div>
-                    <div class="content">
-                        <p>Click the button below to reset your password:</p>
-                        <div style="text-align: center;">
-                            <a href="{reset_link}" class="button">Reset Password</a>
-                        </div>
-                        <p>Or copy this link: {reset_link}</p>
-                        <p>This link expires in 1 hour.</p>
-                    </div>
-                </div>
-            </body>
-            </html>
-            """
-
-            plain_message = f"Reset your TechSpace Hub password: {reset_link}"
-
-            try:
-                send_mail(
-                    subject=subject,
-                    message=plain_message,
-                    from_email=getattr(
-                        settings, "DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke"
-                    ),
-                    recipient_list=[user.email],
-                    html_message=html_message,
-                    fail_silently=False,
-                )
-                logger.info(f"Password reset email sent to {user.email}")
-            except Exception as e:
-                logger.error(
-                    f"Failed to send password reset email to {user.email}: {str(e)}"
-                )'''
 
         return {
             "message": "If an account with this email exists, you will receive a reset link."
