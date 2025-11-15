@@ -5,6 +5,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import permission_classes
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from django.db import models
+from courses.permissions import IsStaffUser
 from .models import Resource, UserBookProgress, ResourceViewLog, FavoriteResource
 from .serializers import (
     ResourceSerializer,
@@ -212,7 +213,7 @@ class StaffResourceViewSet(viewsets.ModelViewSet):
     """
 
     queryset = Resource.objects.all().order_by("-upload_date")
-    permission_classes = [IsAdminUser]  # Only staff can access
+    permission_classes = [IsStaffUser]
 
     def get_serializer_class(self):
         if self.action in ["create", "update", "partial_update"]:
