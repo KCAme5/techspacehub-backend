@@ -5,7 +5,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("library", "0003_populate_uuids.py"),
+        ("library", "0003_populate_uuids"),
     ]
 
     operations = [
