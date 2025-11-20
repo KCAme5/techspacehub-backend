@@ -2,10 +2,35 @@ from rest_framework import serializers
 from .models import Resource, UserBookProgress, ResourceViewLog, FavoriteResource
 
 
-class ResourceSerializer(serializers.ModelSerializer):
+"""class ResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
         fields = "__all__"
+"""
+
+
+class ResourceSerializer(serializers.ModelSerializer):
+    course_title = serializers.CharField(source="course.title", read_only=True)
+    course_slug = serializers.CharField(source="course.slug", read_only=True)
+
+    class Meta:
+        model = Resource
+        fields = [
+            "id",
+            "uuid",
+            "title",
+            "description",
+            "file",
+            "thumbnail",
+            "category",
+            "course",
+            "course_title",
+            "course_slug",
+            "is_public",
+            "view_count",
+            "upload_date",
+            "updated_at",
+        ]
 
 
 class UserBookProgressSerializer(serializers.ModelSerializer):

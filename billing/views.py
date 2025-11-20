@@ -354,7 +354,7 @@ class MpesaCallbackView(APIView):
                     user_email=user.email,
                     amount=payment.amount,
                     week_title=str(week),
-                    payment_method="M-Pesa"
+                    payment_method="M-Pesa",
                 )
 
                 # Enroll user in week
@@ -642,7 +642,7 @@ class VerifyStripePayment(APIView):
                     user_email=user.email,
                     amount=payment.amount,
                     week_title=str(week),
-                    payment_method="Stripe"
+                    payment_method="Stripe",
                 )
 
                 subscription, sub_created = Subscription.objects.get_or_create(
@@ -859,7 +859,7 @@ class InitiateManualMpesaPayment(APIView):
 
             # Payment instructions with YOUR ACTUAL PAYBILL
             paybill_number = "522522"
-            account_number = "1331246156"
+            account_number = "1345879520"
 
             instructions = {
                 "paybill_number": paybill_number,
