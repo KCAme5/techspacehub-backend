@@ -50,14 +50,33 @@ class Resource(models.Model):
         return self.title
 
     def available_for_user(self, user):
-        """Public is free; others depend on enrollment/subscription."""
-        if self.is_public:
+        """Check if resource is available based on user's subscription"""
+        if user.is_staff:
             return True
 
-        if not self.course:
-            return False
+        # Get user's active enrollments with plans
+        active_enrollments = user.enrollments.filter(is_active=True)
 
-        return False
+        # Check if user has any paid plan (BASIC or PRO)
+        has_paid_plan = active_enrollments.filter(plan__in=["BASIC", "PRO"]).exists()
+
+        if has_paid_plan:
+            return True
+
+        # Free user logic - only show one resource per course
+        if self.course:
+            # Get the first resource for this course (by upload date)
+            first_resource = (
+                Resource.objects.filter(course=self.course, is_public=True)
+                .order_by("upload_date")
+                .first()
+            )
+
+            # Only allow access to the first resource of each course
+            return first_resource and first_resource.id == self.id
+
+        # If no course associated, allow access for free users
+        return self.is_public
 
     def is_accessible_by(self, user):
         """Staff can access anything"""

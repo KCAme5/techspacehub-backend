@@ -2,9 +2,8 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from rest_framework.decorators import permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from django.db import models
+from django.db.models import Subquery, OuterRef
 from courses.permissions import IsStaffUser
 from .models import Resource, UserBookProgress, ResourceViewLog, FavoriteResource
 from .serializers import (
@@ -36,27 +35,48 @@ class ResourceViewSet(viewsets.ModelViewSet):
         if course_id:
             queryset = queryset.filter(course_id=course_id)
 
-        # Filter by accessibility
+        # Filter by accessibility based on user subscription
         if user.is_authenticated:
             if user.is_staff:
                 # Staff can see all resources
                 return queryset
             else:
-                # Regular users see public resources
-                # Remove subscription logic since it's not available
-                queryset = queryset.filter(is_public=True)
+                # Check if user has paid plan
+                active_enrollments = user.enrollments.filter(is_active=True)
+                has_paid_plan = active_enrollments.filter(
+                    plan__in=["BASIC", "PRO"]
+                ).exists()
+
+                if has_paid_plan:
+                    # Paid users see all public resources
+                    queryset = queryset.filter(is_public=True)
+                else:
+                    # Free users see only first resource per course + resources without courses
+                    # Get the first resource ID for each course
+                    first_resources = (
+                        Resource.objects.filter(
+                            course=OuterRef("course"), is_public=True
+                        )
+                        .order_by("upload_date")
+                        .values("id")[:1]
+                    )
+
+                    # Show first resource per course OR resources without courses
+                    queryset = queryset.filter(
+                        models.Q(id__in=Subquery(first_resources))
+                        | models.Q(course__isnull=True, is_public=True)
+                    )
         else:
-            # Anonymous users only see public resources
+            # Anonymous users only see public resources (no course-based filtering)
             queryset = queryset.filter(is_public=True)
 
-        return queryset
+        return queryset.distinct()
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context["request"] = self.request
         return context
 
-    # Keep your existing custom actions
     @action(
         detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
     )
