@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.conf import settings
 from django.utils import timezone
-from courses.models import Week, Enrollment  # Changed from Course
+from courses.models import Week, Enrollment
 from accounts.models import Subscription, User
 from .models import Payment
 from requests.auth import HTTPBasicAuth
@@ -13,9 +13,13 @@ import stripe
 import datetime
 from base64 import b64encode
 import logging
+import uuid
 from accounts.views import process_referral_commission
 from datetime import timedelta
 from accounts.email_utils import send_payment_confirmation_email
+import hmac
+import hashlib
+import json
 
 logger = logging.getLogger(__name__)
 stripe.api_key = settings.STRIPE_SECRET_KEY
@@ -100,34 +104,32 @@ class ChoosePlanEnrollView(APIView):
         return Response({"error": "Invalid plan selected"}, status=400)
 
 
-class InitiateMpesaPayment(APIView):
-    """Initiates an M-Pesa STK push for week payment."""
+# ============================================================================
+# LIPANA M-PESA STK PUSH (PRIMARY METHOD)
+# ============================================================================
+
+
+class InitiateStkPushPayment(APIView):
+    """Initiates M-Pesa STK Push using Lipana API for week payment."""
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        logger.info("=== MPESA PAYMENT INITIATION STARTED ===")
+        logger.info("=== LIPANA STK PUSH PAYMENT INITIATION STARTED ===")
         try:
-            phone = request.data.get("phone")
             week_id = request.data.get("week_id")
             plan = request.data.get("plan", "BASIC")
-            logger.info(f"Request data: phone={phone}, week_id={week_id}, plan={plan}")
-            logger.info(f"Full request data: {request.data}")
+            phone = request.data.get("phone", "")
 
-            if not phone or not week_id:
-                logger.error("Missing phone or week_id")
-                return Response(
-                    {"error": "Phone number and week ID are required"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+            logger.info(
+                f"Lipana STK Push request: week_id={week_id}, plan={plan}, phone={phone}"
+            )
 
-            # Validate phone format (Kenyan format)
-            original_phone = phone
-            if not phone.startswith("254") and phone.startswith("0"):
-                phone = "254" + phone[1:]
-            elif not phone.startswith("254") and not phone.startswith("0"):
-                phone = "254" + phone
-            logger.info(f"Phone normalized: {original_phone} -> {phone}")
+            if not week_id:
+                return Response({"error": "Week ID is required"}, status=400)
+
+            if not phone:
+                return Response({"error": "Phone number is required"}, status=400)
 
             try:
                 week = Week.objects.get(id=week_id)
@@ -141,7 +143,7 @@ class InitiateMpesaPayment(APIView):
             user = request.user
             logger.info(f"User: {user.id} - {user.email}")
 
-            # Check if already enrolled - ALLOW UPGRADES FROM FREE TO PAID PLANS
+            # Check existing enrollment - ALLOW UPGRADES FROM FREE TO PAID PLANS
             existing_enrollment = Enrollment.objects.filter(
                 user=user, week=week
             ).first()
@@ -166,128 +168,257 @@ class InitiateMpesaPayment(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            # Determine amount - use week price
+            # Get amount
             amount = int(float(week.price))
-            logger.info(f"Amount determined: {amount} for plan {plan}")
+            logger.info(f"Amount determined: {amount} KES for plan {plan}")
 
-            # Check if already enrolled
-            existing_enrollment = Enrollment.objects.filter(
-                user=user, week=week
-            ).first()
-            if existing_enrollment:
-                if existing_enrollment.plan == plan:
-                    return Response(
-                        {
-                            "error": f"You are already enrolled in this week with {plan} plan"
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-            # Get M-Pesa access token
-            consumer_key = settings.MPESA_CONSUMER_KEY
-            consumer_secret = settings.MPESA_CONSUMER_SECRET
-            auth_url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
-            r = requests.get(
-                auth_url, auth=HTTPBasicAuth(consumer_key, consumer_secret)
-            )
-            access_token = r.json().get("access_token")
-            if not access_token:
-                logger.error("Failed to obtain M-Pesa token")
+            # Validate minimum amount for Lipana
+            if amount < 10:
                 return Response(
-                    {"error": "Failed to obtain M-Pesa token"},
+                    {"error": "Minimum payment amount is KES 10"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Get Lipana credentials
+            lipana_secret_key = getattr(settings, "LIPANA_SECRET_KEY", "")
+
+            if not lipana_secret_key:
+                logger.error("Lipana credentials not configured")
+                return Response(
+                    {"error": "Payment system not configured"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            logger.info("Successfully obtained MPESA access token")
 
-            # Prepare STK push payload
-            timestamp = timezone.now().strftime("%Y%m%d%H%M%S")
-            short_code = settings.MPESA_SHORTCODE
-            passkey = settings.MPESA_PASSKEY
-            password = b64encode(f"{short_code}{passkey}{timestamp}".encode()).decode(
-                "utf-8"
-            )
+            # Format phone number for Lipana (254XXXXXXXXX)
+            phone_number = phone.replace("+", "").replace(" ", "")
+            if phone_number.startswith("0"):
+                phone_number = "254" + phone_number[1:]
+            elif not phone_number.startswith("254"):
+                phone_number = "254" + phone_number
 
-            backend_url = getattr(settings, "BACKEND_URL", None)
-            if not backend_url:
-                logger.error("BACKEND_URL not configured")
-                return Response(
-                    {"error": "BACKEND_URL not configured"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                )
-            callback_url = f"{backend_url}/api/payments/mpesa-callback/"
-            logger.info(f"Callback URL: {callback_url}")
+            logger.info(f"Formatted phone for Lipana: {phone_number}")
+
+            # Prepare Lipana STK Push request
+            transaction_ref = f"WEEK{week.id}_{uuid.uuid4().hex[:8]}"
 
             payload = {
-                "BusinessShortCode": short_code,
-                "Password": password,
-                "Timestamp": timestamp,
-                "TransactionType": "CustomerPayBillOnline",
-                "Amount": amount,
-                "PartyA": phone,
-                "PartyB": short_code,
-                "PhoneNumber": phone,
-                "CallBackURL": callback_url,
-                "AccountReference": f"{user.id}-{week.id}-{plan}",
-                "TransactionDesc": f"Payment for {week} ({plan})",
+                "phone": phone_number,
+                "amount": int(amount),
             }
-            logger.info(f"STK Push payload: {payload}")
+
             headers = {
-                "Authorization": f"Bearer {access_token}",
+                "x-api-key": lipana_secret_key,
                 "Content-Type": "application/json",
             }
 
-            stk_url = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
-            logger.info("Sending STK push request...")
-            response = requests.post(stk_url, json=payload, headers=headers)
+            logger.info(
+                f"Lipana payload prepared: phone={phone_number}, amount={amount}"
+            )
+
+            # Send to Lipana
+            lipana_url = "https://api.lipana.dev/v1/transactions/push-stk"
+            response = requests.post(
+                lipana_url, json=payload, headers=headers, timeout=30
+            )
+
+            logger.info(f"Lipana response status: {response.status_code}")
             res_data = response.json()
+            logger.info(f"Lipana response data: {res_data}")
 
-            logger.info(f"STK push response status: {response.status_code}")
-            logger.info(f"STK push response data: {res_data}")
-
-            if response.status_code != 200:
+            if response.status_code != 200 or res_data.get("success") != True:
+                error_msg = res_data.get("message", "STK Push failed")
+                logger.error(f"Lipana error: {error_msg}")
                 return Response(
-                    {"error": "M-Pesa STK request failed", "details": res_data},
-                    status=response.status_code,
+                    {"error": error_msg, "details": res_data},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            checkout_request_id = res_data.get("CheckoutRequestID")
-            if not checkout_request_id:
-                logger.error("Missing CheckoutRequestID in response")
+            # Get transaction ID from Lipana response
+            transaction_id = res_data.get("data", {}).get("transactionId")
+            if not transaction_id:
+                logger.error("Missing transactionId from Lipana response")
                 return Response(
-                    {"error": "Missing CheckoutRequestID"},
+                    {"error": "Payment initiation failed"},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            logger.info(f"CheckoutRequestID: {checkout_request_id}")
 
-            # Save payment record
+            # Create payment record
             payment = Payment.objects.create(
                 user=user,
-                week=week,  # Changed from course
+                week=week,
                 plan=plan,
                 amount=amount,
                 currency="KES",
-                method="mpesa",
+                method="mpesa_stk",
                 status="pending",
-                transaction_id=checkout_request_id,
+                transaction_id=transaction_id,
             )
+
             logger.info(f"Payment record created: {payment.id}")
 
             return Response(
                 {
                     "success": True,
                     "message": "STK Push sent. Complete payment on your phone.",
-                    "CheckoutRequestID": checkout_request_id,
+                    "reference": transaction_id,
                     "payment_id": payment.id,
+                    "amount": amount,
                 },
                 status=status.HTTP_200_OK,
             )
 
         except Exception as e:
-            logger.error(f"MPESA payment initiation failed: {str(e)}", exc_info=True)
+            logger.error(f"Lipana STK Push initiation failed: {str(e)}", exc_info=True)
             return Response(
                 {"error": f"Payment initiation failed: {str(e)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class LipanaCallbackView(APIView):
+    """Handles Lipana M-Pesa STK Push callback with signature verification."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        logger.info("=== LIPANA CALLBACK RECEIVED ===")
+
+        try:
+            # Get the signature header
+            signature = request.headers.get("X-Lipana-Signature")
+            if not signature:
+                logger.error("Missing X-Lipana-Signature header")
+                return Response(
+                    {"status": "unauthorized"}, status=status.HTTP_401_UNAUTHORIZED
+                )
+
+            # Get raw body for signature verification
+            raw_body = request.body.decode("utf-8")
+            data = json.loads(raw_body)
+
+            logger.info(f"Lipana Callback data: {data}")
+
+            # Verify webhook signature
+            webhook_secret = getattr(settings, "LIPANA_WEBHOOK_SECRET", "")
+            if webhook_secret:
+                is_valid = self.verify_webhook_signature(
+                    raw_body, signature, webhook_secret
+                )
+                if not is_valid:
+                    logger.error("Invalid webhook signature")
+                    return Response(
+                        {"status": "unauthorized"}, status=status.HTTP_401_UNAUTHORIZED
+                    )
+
+            # Process the webhook data
+            event = data.get("event")
+            event_data = data.get("data", {})
+
+            logger.info(f"Lipana Event: {event}, Data: {event_data}")
+
+            transaction_id = event_data.get("transactionId")
+            if not transaction_id:
+                logger.warning("No transactionId in Lipana callback")
+                return Response({"status": "received"}, status=status.HTTP_200_OK)
+
+            try:
+                payment = Payment.objects.get(transaction_id=transaction_id)
+                user = payment.user
+                week = payment.week
+
+                if event == "payment.success":
+                    payment.status = "success"
+                    payment.mpesa_receipt = event_data.get("mpesaReceiptNumber", "")
+                    payment.save()
+                    logger.info(f"Lipana Payment marked as success: {payment.id}")
+
+                    # Send confirmation email
+                    send_payment_confirmation_email(
+                        user_email=user.email,
+                        amount=payment.amount,
+                        week_title=str(week),
+                        payment_method="M-Pesa (STK Push)",
+                    )
+
+                    # Create enrollment
+                    enrollment, created = Enrollment.objects.get_or_create(
+                        user=user,
+                        week=week,
+                        defaults={"plan": payment.plan, "is_active": True},
+                    )
+
+                    if not created:
+                        enrollment.plan = payment.plan
+                        enrollment.is_active = True
+                        enrollment.save()
+
+                    logger.info(f"Enrollment created/updated: {enrollment.id}")
+
+                    # Activate subscription
+                    subscription, sub_created = Subscription.objects.get_or_create(
+                        user=user,
+                        defaults={
+                            "plan": payment.plan,
+                            "is_active": True,
+                        },
+                    )
+
+                    if not sub_created:
+                        subscription.plan = payment.plan
+                        subscription.is_active = True
+                        subscription.start_date = timezone.now()
+                        subscription.expiry_date = None
+                        subscription.save()
+
+                    logger.info(f"Subscription activated for user: {user.id}")
+
+                    # Process referral commission
+                    logger.info(f"Checking for referral commission for user: {user.id}")
+                    commission_result = process_referral_commission(
+                        user, payment.amount
+                    )
+                    if commission_result:
+                        logger.info(
+                            f"Referral commission processed for payment: {payment.id}"
+                        )
+
+                elif event == "payment.failed":
+                    payment.status = "failed"
+                    payment.save()
+                    logger.warning(f"Lipana Payment failed: {transaction_id}")
+
+                else:
+                    logger.info(f"Unhandled Lipana event: {event}")
+
+            except Payment.DoesNotExist:
+                logger.error(f"Payment not found: {transaction_id}")
+
+            return Response({"status": "callback received"}, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Lipana Callback error: {str(e)}", exc_info=True)
+            return Response({"status": "received"}, status=status.HTTP_200_OK)
+
+    def verify_webhook_signature(self, payload, signature, secret):
+        """Verify Lipana webhook signature"""
+        try:
+            # Compute HMAC SHA256
+            computed_signature = hmac.new(
+                secret.encode("utf-8"),
+                payload.encode("utf-8"),
+                digestmod=hashlib.sha256,
+            ).hexdigest()
+
+            # Compare signatures (constant-time comparison)
+            return hmac.compare_digest(computed_signature, signature)
+        except Exception as e:
+            logger.error(f"Webhook signature verification failed: {str(e)}")
+            return False
+
+
+# ============================================================================
+# LEGACY M-PESA STK PUSH (DEPRECATED - KEEPING FOR REFERENCE)
+# ============================================================================
 
 
 class PaymentStatusView(APIView):
@@ -303,8 +434,8 @@ class PaymentStatusView(APIView):
                     "success": True,
                     "status": payment.status,
                     "payment_id": payment.id,
-                    "week_id": payment.week.id,  # Changed from course_id
-                    "week_title": str(payment.week),  # Changed from course_title
+                    "week_id": payment.week.id,
+                    "week_title": str(payment.week),
                     "amount": payment.amount,
                     "plan": payment.plan,
                     "created_at": payment.created_at,
@@ -339,7 +470,7 @@ class MpesaCallbackView(APIView):
         try:
             payment = Payment.objects.get(transaction_id=transaction_id)
             user = payment.user
-            week = payment.week  # Changed from course
+            week = payment.week
             plan = payment.plan
             logger.info(
                 f"Processing payment: user={user.id}, week={week.id}, plan={plan}"
@@ -377,7 +508,6 @@ class MpesaCallbackView(APIView):
                     defaults={
                         "plan": plan,
                         "is_active": True,
-                        # "expiry_date": timezone.now() + timedelta(days=30),
                     },
                 )
 
@@ -650,7 +780,6 @@ class VerifyStripePayment(APIView):
                     defaults={
                         "plan": plan,
                         "is_active": True,
-                        # "expiry_date": timezone.now() + timedelta(days=30),
                     },
                 )
 

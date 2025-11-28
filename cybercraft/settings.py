@@ -294,10 +294,15 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Payment configurations
+# === LIPANA M-Pesa STK Push (PRIMARY) ===
+LIPANA_SECRET_KEY = os.getenv("LIPANA_SECRET_KEY", "")  # lip_sk_live_...
+
+# === STRIPE (Card Payments) ===
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 
+# === LEGACY M-Pesa (Safaricom - Deprecated, kept for backward compatibility) ===
 MPESA_CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY", "")
 MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET", "")
 MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE", "")

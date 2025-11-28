@@ -13,7 +13,8 @@ User = settings.AUTH_USER_MODEL
 
 class Payment(models.Model):
     METHOD_CHOICES = [
-        ("mpesa", "M-Pesa"),
+        ("mpesa_stk", "M-Pesa STK Push (Lipana)"),
+        ("mpesa", "M-Pesa (Legacy STK)"),
         ("stripe", "Stripe"),
         ("manual_mpesa", "Manual M-Pesa"),
     ]
