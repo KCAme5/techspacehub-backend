@@ -13,6 +13,7 @@ class User(AbstractUser):
     ROLE_CHOICES = (
         ("staff", "staff"),
         ("student", "student"),
+        ("management", "management"),
     )
 
     PLAN_CHOICES = (
@@ -62,14 +63,14 @@ class User(AbstractUser):
         self.save(
             update_fields=["failed_login_attempts", "last_failed_login", "locked_until"]
         )
-    
+
     def has_lifetime_access(self, week):
         try:
             enrollment = self.enrollments.get(week=week)
             return enrollment.is_lifetime_access
         except Enrollment.DoesNotExist:
             return False
-    
+
     def get_active_enrollments(self):
         return self.enrollments.filter(is_active=True)
 
@@ -244,9 +245,7 @@ class WithdrawalRequest(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     method = models.CharField(max_length=50)  # mpesa, paypal, etc.
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    account_details = (
-        models.JSONField()
-    )  # { "phone": "+254...", "name": "John Doe" } for M-Pesa
+    account_details = models.JSONField()
     created_at = models.DateTimeField(auto_now_add=True)
     processed_at = models.DateTimeField(blank=True, null=True)
 
@@ -258,5 +257,3 @@ class WithdrawalRequest(models.Model):
 def create_user_wallet(sender, instance, created, **kwargs):
     if created:
         Wallet.objects.create(user=instance)
-
-

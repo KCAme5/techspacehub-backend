@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "labs",
     "billing",
     "live_classes",
+    "management",
 ]
 
 SITE_ID = 1
@@ -295,7 +296,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Payment configurations
 # === LIPANA M-Pesa STK Push (PRIMARY) ===
-LIPANA_SECRET_KEY = os.getenv("LIPANA_SECRET_KEY", "")  # lip_sk_live_...
+LIPANA_SECRET_KEY = os.getenv("LIPANA_SECRET_KEY", "")
+LIPANA_WEBHOOK_SECRET = os.getenv("LIPANA_WEBHOOK_SECRET", "")
+LIPANA_ENVIRONMENT = os.getenv("LIPANA_ENVIRONMENT", "production")
 
 # === STRIPE (Card Payments) ===
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")

@@ -1,3 +1,4 @@
+# cybercraft/cybercraft/urls.py
 """
 URL configuration for cybercraft project.
 
@@ -32,6 +33,7 @@ urlpatterns = [
     path("api/library/", include("library.urls")),
     path("api/dashboard/", include("dashboard.urls")),
     path("api/", include("chat.urls")),
+    path("api/management/", include("management.urls")),
     # path("api/", include("labs.urls")),
     path("api/payments/", include("billing.urls")),
     # path("api/live/", include("live_classes.urls")),
