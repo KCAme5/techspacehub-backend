@@ -1,4 +1,4 @@
-#cybercraft/cybercraft/settings.py
+# cybercraft/cybercraft/settings.py
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -18,7 +18,7 @@ ALLOWED_HOSTS = [
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
-    'techspacehub-api.railway.app', 
+    "techspacehub-api.railway.app",
     "https://cybercraft-fullstack-production.up.railway.app",
 ]
 
@@ -111,14 +111,14 @@ WSGI_APPLICATION = "cybercraft.wsgi.application"
 
 # Database
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
-        'OPTIONS': {'sslmode': 'require'},
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST"),
+        "PORT": os.getenv("DB_PORT"),
+        "OPTIONS": {"sslmode": "require"},
     }
 }
 
@@ -189,7 +189,6 @@ SOCIALACCOUNT_LOGIN_REDIRECT_URL = f"{FRONTEND_URL}/dashboard"
 # Combine ALLOWED_HOSTS from environment variable and hardcoded ones
 env_allowed_hosts = os.getenv("ALLOWED_HOSTS", "").split(",")
 ALLOWED_HOSTS = [
-    "cybercraft-back.onrender.com",
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
