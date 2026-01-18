@@ -82,7 +82,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        send_verification_email(user.email, uid, token)
+
+        try:
+            send_verification_email(user.email, uid, token)
+        except Exception as e:
+            logger.warning(
+                f"Failed to send verification email for {user.email}: {str(e)}"
+            )
+            # Don't fail registration if email sending fails
 
         return user
 
