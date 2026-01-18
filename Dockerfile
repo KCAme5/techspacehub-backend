@@ -1,33 +1,30 @@
-# Dockerfile
 FROM python:3.11-slim
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# Set work directory inside the container
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
+RUN apt-get update && apt-get install -y \
+    gcc \
     libpq-dev \
-    netcat-traditional && \
-    rm -rf /var/lib/apt/lists/*
+    netcat-traditional \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency file
-COPY requirements.txt /app/
+# Copy requirements and install
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir -r requirements.txt
+# Copy application
+COPY . .
 
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
 
-# Copy project files
-COPY . /app/
+# Run migrations and collectstatic
+RUN python manage.py collectstatic --noinput
 
-# Expose Django port
-EXPOSE 8000
+# Expose port
+EXPOSE 8080
 
-# Wait for database and then run the app
-CMD ["sh", "-c", "until nc -z db 5432; do echo 'Waiting for PostgreSQL...'; sleep 2; done; python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]
+# Start command
+CMD ["gunicorn", "cybercraft.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3", "--timeout", "120"]

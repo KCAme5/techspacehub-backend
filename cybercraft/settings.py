@@ -15,17 +15,17 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 
 # Allowed hosts - PRODUCTION
 ALLOWED_HOSTS = [
-    "cybercraft-back.onrender.com",
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
+    'techspacehub-api.railway.app', 
 ]
 
 # Frontend/Backend URLs - PRODUCTION
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://techspacehub.co.ke")
 BACKEND_URL = os.getenv(
     "BACKEND_URL",
-    "https://cybercraft-back.onrender.com",
+    "https://techspacehub-api.railway.app",
 )
 SITE_NAME = "TechSpace"
 
@@ -110,7 +110,15 @@ WSGI_APPLICATION = "cybercraft.wsgi.application"
 
 # Database
 DATABASES = {
-    "default": dj_database_url.config(default="sqlite:///db.sqlite3", conn_max_age=600)
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
+        'OPTIONS': {'sslmode': 'require'},
+    }
 }
 
 # Password validation
@@ -191,7 +199,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
-    "https://cybercraft-back.onrender.com",
+    "https://techspacehub-api.fly.dev",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
