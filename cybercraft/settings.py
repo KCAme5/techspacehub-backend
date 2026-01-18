@@ -204,10 +204,16 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
+CORS_EXPOSE_HEADERS = [
+    "content-disposition",
+    "x-total-count",
+    "x-total-pages",
+]
 
 CORS_ALLOW_METHODS = [
     "DELETE",
     "GET",
+    "HEAD",
     "OPTIONS",
     "PATCH",
     "POST",
