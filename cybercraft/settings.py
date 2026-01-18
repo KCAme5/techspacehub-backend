@@ -19,13 +19,14 @@ ALLOWED_HOSTS = [
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
     'techspacehub-api.railway.app', 
+    "https://cybercraft-fullstack-production.up.railway.app",
 ]
 
 # Frontend/Backend URLs - PRODUCTION
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://techspacehub.co.ke")
 BACKEND_URL = os.getenv(
     "BACKEND_URL",
-    "https://techspacehub-api.railway.app",
+    "https://cybercraft-fullstack-production.up.railway.app",
 )
 SITE_NAME = "TechSpace"
 
@@ -199,7 +200,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
-    "https://techspacehub-api.fly.dev",
+    "https://cybercraft-fullstack-production.up.railway.app",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
@@ -229,7 +230,7 @@ ALLOWED_HOSTS = list(set(ALLOWED_HOSTS))
 CSRF_TRUSTED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
-    "https://cybercraft-back.onrender.com",
+    "https://cybercraft-fullstack-production.up.railway.app",
     "https://api.techspacehub.co.ke",
 ]
 
