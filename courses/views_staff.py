@@ -46,10 +46,10 @@ class StaffDashboardView(generics.GenericAPIView):
         recent_courses = Course.objects.filter(created_at__gte=thirty_days_ago).count()
 
         # Course statistics
-        course_stats = Course.objects.annotate(
+        course_stats = Course.objects.values("id", "title", "created_at").annotate(
             total_students=Count("weeks__enrollments", distinct=True),
-            total_weeks=Count("weeks"),
-        ).values("id", "title", "total_students", "total_weeks", "created_at")
+            total_weeks=Count("weeks", distinct=True),
+        )
 
         data = {
             "overview": {
