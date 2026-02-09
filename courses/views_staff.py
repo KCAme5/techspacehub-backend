@@ -46,16 +46,31 @@ class StaffDashboardView(generics.GenericAPIView):
         recent_courses = Course.objects.filter(created_at__gte=thirty_days_ago).count()
 
         # Course statistics
-        courses = Course.objects.annotate(
-            total_students=Count("weeks__enrollments", distinct=True),
-            total_weeks=Count("weeks", distinct=True),
+        # 1. Base courses
+        courses = Course.objects.all().order_by("-created_at")
+
+        # 2. Week counts per course
+        week_counts = (
+            Week.objects.values("course")
+            .annotate(count=Count("id"))
+            .order_by("course")
         )
+        week_map = {item["course"]: item["count"] for item in week_counts}
+
+        # 3. Enrollment counts per course
+        enrollment_counts = (
+            Enrollment.objects.values("week__course")
+            .annotate(count=Count("id"))
+            .order_by("week__course")
+        )
+        enrollment_map = {item["week__course"]: item["count"] for item in enrollment_counts}
+
         course_stats = [
             {
                 "id": c.id,
                 "title": c.title,
-                "total_students": c.total_students,
-                "total_weeks": c.total_weeks,
+                "total_students": enrollment_map.get(c.id, 0),
+                "total_weeks": week_map.get(c.id, 0),
                 "created_at": c.created_at,
             }
             for c in courses
