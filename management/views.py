@@ -55,6 +55,26 @@ class DashboardOverviewViewSet(viewsets.ViewSet):
         return Response(data)
 
     @action(detail=False, methods=["get"])
+    def debug_migrations(self, request):
+        """Debug migrations in production"""
+        from django.core.management import call_command
+        from io import StringIO
+        
+        out = StringIO()
+        call_command('showmigrations', stdout=out)
+        
+        # Also check if table exists
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT count(*) FROM information_schema.tables WHERE table_name = 'accounts_activitylog'")
+            table_exists = cursor.fetchone()[0] > 0
+            
+        return Response({
+            "migrations": out.getvalue(),
+            "table_exists": table_exists
+        })
+
+    @action(detail=False, methods=["get"])
     def course_distribution(self, request):
         """Get course enrollment distribution"""
         data = get_course_distribution()
