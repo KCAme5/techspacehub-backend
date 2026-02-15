@@ -118,6 +118,17 @@ DATABASES = {
     )
 }
 
+# Fallback to individual variables if DATABASE_URL is missing
+if not DATABASES.get("default") or not DATABASES["default"].get("ENGINE"):
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST"),
+        "PORT": os.getenv("DB_PORT"),
+    }
+
 # Ensure Postgres SSL
 if DATABASES["default"].get("ENGINE") == "django.db.backends.postgresql":
     DATABASES["default"].setdefault("OPTIONS", {})["sslmode"] = "require"
@@ -167,10 +178,9 @@ AUTHENTICATION_BACKENDS = (
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_UNIQUE_EMAIL = True
-ACCOUNT_USERNAME_REQUIRED = False
 ACCOUNT_AUTHENTICATION_METHOD = "email"
-ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 
 # Social account settings - PRODUCTION
 SOCIALACCOUNT_EMAIL_VERIFICATION = "optional"
