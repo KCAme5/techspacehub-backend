@@ -166,13 +166,14 @@ def get_course_distribution():
     """Get course enrollment distribution"""
     courses = (
         Course.objects.filter(is_active=True)
+        .values("id", "title")  # Specify fields for GROUP BY
         .annotate(enrollment_count=Count("weeks__enrollments"))
         .order_by("-enrollment_count")[:10]
     )
 
     data = []
     for course in courses:
-        data.append({"name": course.title, "value": course.enrollment_count})
+        data.append({"name": course["title"], "value": course["enrollment_count"]})
 
     return data
 
