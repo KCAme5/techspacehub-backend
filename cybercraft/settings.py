@@ -257,7 +257,10 @@ REST_FRAMEWORK = {
         "user": "200/min",
         "login": "5/min",
         "signup": "3/min",
+        "payment": "10/hour",  # Prevent payment spam
     },
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 100,  # For activity logs and other listings
 }
 
 
@@ -295,16 +298,28 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10240
 
-# Security - PRODUCTION
+X_FRAME_OPTIONS = "SAMEORIGIN"
+ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
+
+# Enhanced Security Settings
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    
+    # HSTS Settings (HTTP Strict Transport Security)
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
 
-X_FRAME_OPTIONS = "SAMEORIGIN"
-ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
+# Session and Cookie Security (always enforced)
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = 86400  # 24 hours
 
 # API
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

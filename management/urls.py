@@ -7,6 +7,7 @@ router.register(r"overview", views.DashboardOverviewViewSet, basename="overview"
 router.register(r"users", views.UserManagementViewSet, basename="users")
 router.register(r"courses", views.CourseManagementViewSet, basename="courses")
 router.register(r"payments", views.PaymentManagementViewSet, basename="payments")
+router.register(r"activity-logs", views.ActivityLogViewSet, basename="activity-logs")
 
 urlpatterns = [
     path("", include(router.urls)),

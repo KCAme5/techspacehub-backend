@@ -149,10 +149,13 @@ class LoginAttempt(models.Model):
     user_agent = models.CharField(max_length=512, null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
     success = models.BooleanField(default=False)
-    failure_reason = models.CharField(max_length=255, null=True, blank=True)
+    failure_reason = models.TextField(null=True, blank=True)  # Changed to TextField for full error logging
 
     class Meta:
         ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["-timestamp"]),  # Performance optimization
+        ]
 
     def __str__(self):
         return f"LoginAttempt(email={self.email}, success={self.success}, time={self.timestamp})"
@@ -258,3 +261,103 @@ class WithdrawalRequest(models.Model):
 def create_user_wallet(sender, instance, created, **kwargs):
     if created:
         Wallet.objects.create(user=instance)
+
+
+class ActivityLog(models.Model):
+    """
+    Comprehensive audit log for all platform activities.
+    Tracks user actions, system events, and security-related activities.
+    """
+    
+    ACTION_CHOICES = [
+        # Authentication
+        ("login_success", "Login Success"),
+        ("login_failed", "Login Failed"),
+        ("logout", "Logout"),
+        ("register", "Registration"),
+        ("password_change", "Password Change"),
+        ("password_reset", "Password Reset"),
+        ("oauth_login", "OAuth Login"),
+        
+        # User Management
+        ("user_created", "User Created"),
+        ("user_updated", "User Updated"),
+        ("user_deleted", "User Deleted"),
+        ("user_verified", "User Verified"),
+        ("user_suspended", "User Suspended"),
+        
+        # Course Management
+        ("course_created", "Course Created"),
+        ("course_updated", "Course Updated"),
+        ("course_deleted", "Course Deleted"),
+        ("course_published", "Course Published"),
+        ("enrollment_created", "Enrollment Created"),
+        
+        # Financial
+        ("payment_success", "Payment Success"),
+        ("payment_failed", "Payment Failed"),
+        ("withdrawal_requested", "Withdrawal Requested"),
+        ("withdrawal_approved", "Withdrawal Approved"),
+        ("withdrawal_rejected", "Withdrawal Rejected"),
+        ("refund_processed", "Refund Processed"),
+        
+        # Content
+        ("content_created", "Content Created"),
+        ("content_updated", "Content Updated"),
+        ("content_deleted", "Content Deleted"),
+        ("quiz_submitted", "Quiz Submitted"),
+        ("project_submitted", "Project Submitted"),
+        
+        # Security
+        ("suspicious_activity", "Suspicious Activity"),
+        ("rate_limit_exceeded", "Rate Limit Exceeded"),
+        ("unauthorized_access", "Unauthorized Access Attempt"),
+        
+        # Other
+        ("other", "Other"),
+    ]
+    
+    SEVERITY_CHOICES = [
+        ("info", "Info"),
+        ("warning", "Warning"),
+        ("critical", "Critical"),
+    ]
+    
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="activity_logs",
+    )
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    details = models.JSONField(default=dict, blank=True)  # Flexible metadata
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(null=True, blank=True)
+    severity = models.CharField(
+        max_length=20, choices=SEVERITY_CHOICES, default="info"
+    )
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    
+    class Meta:
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["-timestamp"]),
+            models.Index(fields=["action"]),
+            models.Index(fields=["severity"]),
+            models.Index(fields=["user", "-timestamp"]),
+        ]
+    
+    def __str__(self):
+        user_str = self.user.username if self.user else "Anonymous"
+        return f"{user_str} - {self.get_action_display()} ({self.timestamp})"
+    
+    @classmethod
+    def cleanup_old_logs(cls, days=90):
+        """Delete logs older than specified days (data retention policy)"""
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        cutoff_date = timezone.now() - timedelta(days=days)
+        deleted_count = cls.objects.filter(timestamp__lt=cutoff_date).delete()[0]
+        return deleted_count

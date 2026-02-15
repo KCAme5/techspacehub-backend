@@ -4,11 +4,16 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
 from django.db.models import Q, Sum
+from django.http import HttpResponse
+import csv
+from datetime import datetime, timedelta
+from django.utils import timezone
 from .permissions import IsManagement
 from .serializers import (
     UserManagementSerializer,
     CourseManagementSerializer,
     PaymentManagementSerializer,
+    ActivityLogSerializer,
 )
 from .utils import (
     get_dashboard_overview,
@@ -19,6 +24,8 @@ from .utils import (
 )
 from courses.models import Course, Enrollment
 from billing.models import Payment
+from accounts.models import ActivityLog
+from accounts.activity_log import log_activity
 
 User = get_user_model()
 
@@ -96,6 +103,16 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         user.is_active = False
         user.save()
+        
+        # Log suspension activity
+        log_activity(
+            user=request.user,
+            action="user_suspended",
+            details={"suspended_user": user.username, "suspended_user_id": user.id},
+            request=request,
+            severity="warning"
+        )
+        
         return Response({"message": f"User {user.username} suspended successfully"})
 
     @action(detail=True, methods=["post"])
@@ -104,6 +121,16 @@ class UserManagementViewSet(viewsets.ModelViewSet):
         user = self.get_object()
         user.is_active = True
         user.save()
+        
+        # Log activation activity
+        log_activity(
+            user=request.user,
+            action="user_updated",
+            details={"activated_user": user.username, "activated_user_id": user.id},
+            request=request,
+            severity="info"
+        )
+        
         return Response({"message": f"User {user.username} activated successfully"})
 
     @action(detail=False, methods=["get"])
@@ -286,3 +313,113 @@ class PaymentManagementViewSet(viewsets.ModelViewSet):
                 "failed_count": failed_count,
             }
         )
+
+
+class ActivityLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """Activity log viewing for management (read-only)"""
+    
+    permission_classes = [IsAuthenticated, IsManagement]
+    serializer_class = ActivityLogSerializer
+    queryset = ActivityLog.objects.all()
+    
+    def get_queryset(self):
+        queryset = ActivityLog.objects.select_related("user").all()
+        
+        # Filter by user
+        user_id = self.request.query_params.get("user_id", None)
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        
+        # Filter by action type
+        action = self.request.query_params.get("action", None)
+        if action:
+            queryset = queryset.filter(action=action)
+        
+        # Filter by severity
+        severity = self.request.query_params.get("severity", None)
+        if severity:
+            queryset = queryset.filter(severity=severity)
+        
+        # Filter by date range
+        start_date = self.request.query_params.get("start_date", None)
+        end_date = self.request.query_params.get("end_date", None)
+        
+        if start_date:
+            try:
+                start = datetime.strptime(start_date, "%Y-%m-%d")
+                queryset = queryset.filter(timestamp__gte=start)
+            except ValueError:
+                pass
+        
+        if end_date:
+            try:
+                end = datetime.strptime(end_date, "%Y-%m-%d")
+                end = end + timedelta(days=1)  # Include the entire end date
+                queryset = queryset.filter(timestamp__lt=end)
+            except ValueError:
+                pass
+        
+        # Search by username, email, IP
+        search = self.request.query_params.get("search", None)
+        if search:
+            queryset = queryset.filter(
+                Q(user__username__icontains=search)
+                | Q(user__email__icontains=search)
+                | Q(ip_address__icontains=search)
+            )
+        
+        return queryset.order_by("-timestamp")
+    
+    @action(detail=False, methods=["get"])
+    def export_csv(self, request):
+        """Export activity logs to CSV"""
+        queryset = self.get_queryset()[:1000]  # Limit to 1000 records
+        
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="activity_logs.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow([
+            "Timestamp",
+            "Username",
+            "Email",
+            "Action",
+            "Severity",
+            "IP Address",
+            "Details"
+        ])
+        
+        for log in queryset:
+            writer.writerow([
+                log.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                log.user.username if log.user else "Anonymous",
+                log.user.email if log.user else "N/A",
+                log.get_action_display(),
+                log.get_severity_display(),
+                log.ip_address or "N/A",
+                str(log.details)
+            ])
+        
+        return response
+    
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        """Get activity log statistics"""
+        total_logs = ActivityLog.objects.count()
+        
+        # Count by severity
+        critical_count = ActivityLog.objects.filter(severity="critical").count()
+        warning_count = ActivityLog.objects.filter(severity="warning").count()
+        info_count = ActivityLog.objects.filter(severity="info").count()
+        
+        # Recent activity (last 24 hours)
+        yesterday = timezone.now() - timedelta(days=1)
+        recent_count = ActivityLog.objects.filter(timestamp__gte=yesterday).count()
+        
+        return Response({
+            "total_logs": total_logs,
+            "critical_count": critical_count,
+            "warning_count": warning_count,
+            "info_count": info_count,
+            "recent_24h": recent_count,
+        })

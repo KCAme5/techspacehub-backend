@@ -35,6 +35,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.contrib.auth import login
 from .email_utils import send_verification_email
+from .activity_log import log_activity, log_authentication, log_financial
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -124,6 +125,16 @@ class RegisterView(generics.CreateAPIView):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        
+        # Log registration
+        log_authentication(
+            user=user,
+            action="register",
+            request=request,
+            success=True,
+            details={"email": user.email, "role": user.role}
+        )
+        
         return Response(
             {
                 "message": "Registration successful. Check your email to verify your account."
@@ -165,6 +176,15 @@ class LoginView(APIView):
             user_agent=user_agent,
             success=True,
         )
+        
+        # Log successful login to activity log
+        log_authentication(
+            user=user,
+            action="login_success",
+            request=request,
+            success=True,
+            details={"role": user.role}
+        )
 
         refresh = RefreshToken.for_user(user)
         return Response(
@@ -195,7 +215,16 @@ class LoginView(APIView):
             ip_address=ip,
             user_agent=user_agent,
             success=False,
-            failure_reason=str(exc)[:255],  # Truncate to match DB field limit
+            failure_reason=str(exc),  # Now using TextField, no truncation needed
+        )
+        
+        # Log failed login to activity log
+        log_authentication(
+            user=user,
+            action="login_failed",
+            request=request,
+            success=False,
+            details={"email": email, "reason": str(exc)[:200]}
         )
 
         # Increment failed attempts if user exists
@@ -529,14 +558,35 @@ class ChangePasswordView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if len(new_password) < 6:
+        # Enhanced password validation
+        if len(new_password) < 8:
             return Response(
-                {"error": "New password must be at least 6 characters long"},
+                {"error": "New password must be at least 8 characters long"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        # Check password strength
+        has_upper = any(c.isupper() for c in new_password)
+        has_lower = any(c.islower() for c in new_password)
+        has_digit = any(c.isdigit() for c in new_password)
+        
+        if not (has_upper and has_lower and has_digit):
+            return Response(
+                {"error": "Password must contain uppercase, lowercase, and numbers"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         user.set_password(new_password)
         user.save()
+        
+        # Log password change
+        log_activity(
+            user=user,
+            action="password_change",
+            request=request,
+            severity="info",
+            details={"changed_by": "user"}
+        )
 
         return Response(
             {"message": "Password updated successfully"}, status=status.HTTP_200_OK

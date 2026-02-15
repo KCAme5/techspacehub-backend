@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from courses.models import Course, Week, Enrollment
 from billing.models import Payment
-from accounts.models import Wallet, Referral
+from accounts.models import Wallet, Referral, ActivityLog
 from django.db import models
 
 User = get_user_model()
@@ -135,3 +135,34 @@ class PaymentManagementSerializer(serializers.ModelSerializer):
             "updated_at",
             "admin_notes",
         ]
+
+
+class ActivityLogSerializer(serializers.ModelSerializer):
+    """Activity log for management dashboard audit trail"""
+
+    username = serializers.CharField(source="user.username", read_only=True)
+    user_email = serializers.CharField(source="user.email", read_only=True)
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+    severity_display = serializers.CharField(source="get_severity_display", read_only=True)
+    timestamp_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ActivityLog
+        fields = [
+            "id",
+            "user",
+            "username",
+            "user_email",
+            "action",
+            "action_display",
+            "details",
+            "ip_address",
+            "user_agent",
+            "severity",
+            "severity_display",
+            "timestamp",
+            "timestamp_display",
+        ]
+
+    def get_timestamp_display(self, obj):
+        return obj.timestamp.strftime("%Y-%m-%d %H:%M:%S")
