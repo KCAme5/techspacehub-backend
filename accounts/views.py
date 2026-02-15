@@ -195,7 +195,7 @@ class LoginView(APIView):
             ip_address=ip,
             user_agent=user_agent,
             success=False,
-            failure_reason=str(exc),
+            failure_reason=str(exc)[:255],  # Truncate to match DB field limit
         )
 
         # Increment failed attempts if user exists
