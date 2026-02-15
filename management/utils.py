@@ -163,17 +163,28 @@ def get_enrollment_trend(days=30):
 
 
 def get_course_distribution():
-    """Get course enrollment distribution"""
-    courses = (
-        Course.objects.filter(is_active=True)
-        .values("id", "title")  # Specify fields for GROUP BY
-        .annotate(enrollment_count=Count("weeks__enrollments"))
+    """Get course enrollment distribution.
+    Using Enrollment as the base query is more reliable for PostgreSQL grouping.
+    """
+    stats = (
+        Enrollment.objects.filter(week__course__is_active=True)
+        .values("week__course__title")
+        .annotate(enrollment_count=Count("id"))
         .order_by("-enrollment_count")[:10]
     )
 
     data = []
-    for course in courses:
-        data.append({"name": course["title"], "value": course["enrollment_count"]})
+    for item in stats:
+        data.append({
+            "name": item["week__course__title"], 
+            "value": item["enrollment_count"]
+        })
+
+    # Fallback: if no enrollments, show top active courses with 0
+    if not data:
+        courses = Course.objects.filter(is_active=True)[:10]
+        for course in courses:
+            data.append({"name": course.title, "value": 0})
 
     return data
 
