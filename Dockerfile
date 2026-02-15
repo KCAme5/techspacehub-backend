@@ -18,13 +18,19 @@ COPY . .
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+
+# Finalize permissions for entrypoint
+RUN chmod +x /app/entrypoint.sh
+
 USER appuser
 
-# Run migrations and collectstatic
+# Run collectstatic during build
 RUN python manage.py collectstatic --noinput
 
 # Expose port
 EXPOSE 8080
+
+ENTRYPOINT ["/app/entrypoint.sh"]
 
 # Start command
 CMD ["gunicorn", "cybercraft.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3", "--timeout", "120"]
