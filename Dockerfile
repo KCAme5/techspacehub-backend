@@ -19,8 +19,8 @@ COPY . .
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 
-# Finalize permissions for entrypoint
-RUN chmod +x /app/entrypoint.sh
+# Fix potential Windows CRLF issues and ensure execution permissions
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 USER appuser
 
@@ -32,5 +32,5 @@ EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
-# Start command
+# Start command (Procfile will override this in most cloud platforms)
 CMD ["gunicorn", "cybercraft.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3", "--timeout", "120"]

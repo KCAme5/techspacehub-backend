@@ -1,1 +1,1 @@
-web: ./entrypoint.sh gunicorn cybercraft.wsgi:application --bind 0.0.0.0:$PORT
+web: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn cybercraft.wsgi:application --bind 0.0.0.0:$PORT"
