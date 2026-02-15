@@ -35,15 +35,21 @@ class UserManagementSerializer(serializers.ModelSerializer):
         ]
 
     def get_total_enrollments(self, obj):
-        return obj.enrollments.count()
+        # Use annotated value if available, else fallback to count()
+        return getattr(obj, "annotated_total_enrollments", obj.enrollments.count())
 
     def get_total_spent(self, obj):
+        # Use annotated value if available, else fallback to aggregate
+        if hasattr(obj, "annotated_total_spent"):
+            return float(obj.annotated_total_spent)
+            
         total = obj.payments.filter(status="success").aggregate(
             total=models.Sum("amount")
         )["total"]
         return float(total) if total else 0
 
     def get_wallet_balance(self, obj):
+        # wallet is select_related in get_queryset
         try:
             return float(obj.wallet.balance)
         except:

@@ -3,7 +3,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth import get_user_model
-from django.db.models import Q, Sum
+from django.db import models
+from django.db.models import Q, Sum, Count
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 import csv
 from datetime import datetime, timedelta
@@ -96,7 +98,15 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
 
     def get_queryset(self):
-        queryset = User.objects.all()
+        # Optimized query with annotations to prevent N+1 queries
+        queryset = User.objects.annotate(
+            annotated_total_enrollments=Count("enrollments", distinct=True),
+            annotated_total_spent=Coalesce(
+                Sum("payments__amount", filter=Q(payments__status="success")),
+                0,
+                output_field=models.DecimalField()
+            )
+        ).select_related("wallet")
 
         # Filter by role
         role = self.request.query_params.get("role", None)
