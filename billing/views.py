@@ -988,7 +988,7 @@ class InitiateManualMpesaPayment(APIView):
 
             # Payment instructions with YOUR ACTUAL PAYBILL
             paybill_number = "522522"
-            account_number = "1345879520"
+            account_number = "1345721072"
 
             instructions = {
                 "paybill_number": paybill_number,
