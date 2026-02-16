@@ -98,13 +98,18 @@ class UserManagementViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
 
     def get_queryset(self):
-        # Optimized query with annotations to prevent N+1 queries
+        from django.db.models import OuterRef, Subquery, Count, Sum, Value, IntegerField, DecimalField
+
+        # Subqueries to avoid GROUP BY issues and Cartesian products
+        enrollments_qs = Enrollment.objects.filter(user=OuterRef("pk")).values("user").annotate(cnt=Count("id")).values("cnt")
+        payments_qs = Payment.objects.filter(user=OuterRef("pk"), status="success").values("user").annotate(total=Sum("amount")).values("total")
+
         queryset = User.objects.annotate(
-            annotated_total_enrollments=Count("enrollments", distinct=True),
+            annotated_total_enrollments=Coalesce(Subquery(enrollments_qs, output_field=IntegerField()), 0),
             annotated_total_spent=Coalesce(
-                Sum("payments__amount", filter=Q(payments__status="success")),
+                Subquery(payments_qs, output_field=DecimalField()),
                 0,
-                output_field=models.DecimalField()
+                output_field=DecimalField()
             )
         ).select_related("wallet")
 
