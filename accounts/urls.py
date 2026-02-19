@@ -17,11 +17,13 @@ from .views import (
     ChangePasswordView,
     UpdateProfileView,
     DebugReferralView,
+    health_check,
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
 
 urlpatterns = [
+    path("health/", health_check, name="health_check"),
     path("register/", RegisterView.as_view(), name="register"),
     path("login/", LoginView.as_view(), name="login"),
     path(

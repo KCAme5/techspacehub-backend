@@ -32,5 +32,9 @@ EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]
 
+# Health check to prevent restart loop
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8080/api/health/')" || exit 1
+
 # Start command (Procfile will override this in most cloud platforms)
-CMD ["gunicorn", "cybercraft.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3", "--timeout", "120"]
+CMD ["gunicorn", "cybercraft.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3", "--timeout", "120", "--preload"]

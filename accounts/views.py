@@ -5,6 +5,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.http import JsonResponse
+from django.db import connection
 from .serializers import (
     RegisterSerializer,
     LoginSerializer,
@@ -36,6 +38,18 @@ from django.http import HttpResponse
 from django.contrib.auth import login
 from .email_utils import send_verification_email
 from .activity_log import log_activity, log_authentication, log_financial
+
+
+def health_check(request):
+    """Health check endpoint for Coolify/Docker"""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+        return JsonResponse({"status": "healthy", "database": "connected"}, status=200)
+    except Exception as e:
+        return JsonResponse({"status": "unhealthy", "error": str(e)}, status=503)
+
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -125,16 +139,16 @@ class RegisterView(generics.CreateAPIView):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        
+
         # Log registration
         log_authentication(
             user=user,
             action="register",
             request=request,
             success=True,
-            details={"email": user.email, "role": user.role}
+            details={"email": user.email, "role": user.role},
         )
-        
+
         return Response(
             {
                 "message": "Registration successful. Check your email to verify your account."
@@ -176,14 +190,14 @@ class LoginView(APIView):
             user_agent=user_agent,
             success=True,
         )
-        
+
         # Log successful login to activity log
         log_authentication(
             user=user,
             action="login_success",
             request=request,
             success=True,
-            details={"role": user.role}
+            details={"role": user.role},
         )
 
         refresh = RefreshToken.for_user(user)
@@ -217,14 +231,14 @@ class LoginView(APIView):
             success=False,
             failure_reason=str(exc),  # Now using TextField, no truncation needed
         )
-        
+
         # Log failed login to activity log
         log_authentication(
             user=user,
             action="login_failed",
             request=request,
             success=False,
-            details={"email": email, "reason": str(exc)[:200]}
+            details={"email": email, "reason": str(exc)[:200]},
         )
 
         # Increment failed attempts if user exists
@@ -564,12 +578,12 @@ class ChangePasswordView(APIView):
                 {"error": "New password must be at least 8 characters long"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         # Check password strength
         has_upper = any(c.isupper() for c in new_password)
         has_lower = any(c.islower() for c in new_password)
         has_digit = any(c.isdigit() for c in new_password)
-        
+
         if not (has_upper and has_lower and has_digit):
             return Response(
                 {"error": "Password must contain uppercase, lowercase, and numbers"},
@@ -578,14 +592,14 @@ class ChangePasswordView(APIView):
 
         user.set_password(new_password)
         user.save()
-        
+
         # Log password change
         log_activity(
             user=user,
             action="password_change",
             request=request,
             severity="info",
-            details={"changed_by": "user"}
+            details={"changed_by": "user"},
         )
 
         return Response(
