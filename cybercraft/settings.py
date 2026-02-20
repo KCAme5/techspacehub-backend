@@ -202,6 +202,8 @@ ALLOWED_HOSTS = [
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
+    "cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "92.4.131.203",
 ] + [host for host in env_allowed_hosts if host]
 
 # CORS settings - PRODUCTION
@@ -210,6 +212,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
     "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "https://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
@@ -245,8 +248,9 @@ ALLOWED_HOSTS = list(set(ALLOWED_HOSTS))
 CSRF_TRUSTED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
-    "https://cybercraft-fullstack-production.up.railway.app",
     "https://api.techspacehub.co.ke",
+    "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "https://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
 ]
 
 
