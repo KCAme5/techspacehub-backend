@@ -18,7 +18,8 @@ ALLOWED_HOSTS = [
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
-    "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "92.4.131.203",
 ]
 
 # Frontend/Backend URLs - PRODUCTION
@@ -319,7 +320,7 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    
+
     # HSTS Settings (HTTP Strict Transport Security)
     SECURE_HSTS_SECONDS = 31536000  # 1 year
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
