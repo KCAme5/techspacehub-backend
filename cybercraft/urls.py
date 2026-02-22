@@ -18,6 +18,7 @@ urlpatterns = [
     path("api/management/", include("management.urls")),
     # path("api/", include("labs.urls")),
     path("api/payments/", include("billing.urls")),
+    path("api/services/", include("services.urls")),
     # path("api/live/", include("live_classes.urls")),
     path("api/auth/", include("dj_rest_auth.urls")),
     path("api/auth/registration/", include("dj_rest_auth.registration.urls")),

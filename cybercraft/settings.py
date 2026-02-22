@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "billing",
     "live_classes",
     "management",
+    "services",
 ]
 
 SITE_ID = 1
