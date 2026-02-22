@@ -400,3 +400,13 @@ USE_X_FORWARDED_PORT = True
 if not DEBUG:
     # These help with larger requests on cloud platforms
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Services Settings
+REPORTS_ROOT = os.path.join(MEDIA_ROOT, 'reports')
+
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Nairobi'

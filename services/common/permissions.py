@@ -1,9 +1,34 @@
 from rest_framework import permissions
 
-class IsClient(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'student'
+class IsOrderOwner(permissions.BasePermission):
+    """
+    Only the client who created the order can access it.
+    """
+    def has_object_permission(self, request, view, obj):
+        return obj.client == request.user
 
-class IsAgent(permissions.BasePermission):
+class IsAssignedAgent(permissions.BasePermission):
+    """
+    For manned orders, only the assigned agent can access.
+    """
+    def has_object_permission(self, request, view, obj):
+        # This assumes the concrete model has an 'agent' or 'assigned_agent' field
+        # or we check via AgentAssignment model later.
+        if hasattr(obj, 'agent'):
+            return obj.agent == request.user
+        return False
+
+class IsServiceStaff(permissions.BasePermission):
+    """
+    Admin/Management users have full access.
+    """
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'staff'
+        return request.user.role in ['management', 'staff'] or request.user.is_staff
+
+class CanClaimOrder(permissions.BasePermission):
+    """
+    Qualified agents (logic checks labs/courses completion later).
+    """
+    def has_permission(self, request, view):
+        # Placeholder logic: Check if user is staff/agent role
+        return request.user.role == 'staff'
