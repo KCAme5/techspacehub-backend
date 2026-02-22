@@ -250,7 +250,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
     "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
-    # "https://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "https://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
 ]
 
 
