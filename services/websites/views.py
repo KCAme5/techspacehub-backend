@@ -43,3 +43,17 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
         
         BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="Revision requested by client.")
         return Response({'status': 'revision requested'}, status=status.HTTP_200_OK)
+
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner])
+    def mark_consent(self, request, pk=None):
+        order = self.get_object()
+        ip = request.META.get('REMOTE_ADDR')
+        BaseServiceLogic.mark_consent_given(order, ip)
+        
+        # If AI mode, we might want to trigger generation immediately after consent
+        if order.mode == 'ai' and order.status == 'consented':
+            from .tasks import generate_ai_website
+            generate_ai_website.delay(order.id)
+            BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="AI website generation triggered after consent.")
+            
+        return Response({'status': 'consent marked'}, status=status.HTTP_200_OK)

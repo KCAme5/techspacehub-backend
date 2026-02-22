@@ -24,7 +24,7 @@ class AuditOrderViewSet(viewsets.ModelViewSet):
         BaseServiceLogic.mark_consent_given(order, ip)
         return Response({'status': 'consent marked'}, status=status.HTTP_200_OK)
 
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsServiceStaff])
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner | IsServiceStaff])
     def trigger_scan(self, request, pk=None):
         order = self.get_object()
         if not order.consent_given:
@@ -60,3 +60,10 @@ class AuditOrderViewSet(viewsets.ModelViewSet):
             return Response({'status': 'report submitted'}, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @decorators.action(detail=True, methods=['get'], permission_classes=[IsOrderOwner | IsServiceStaff])
+    def results(self, request, pk=None):
+        order = self.get_object()
+        results = ScanResult.objects.filter(order=order)
+        serializer = ScanResultSerializer(results, many=True)
+        return Response(serializer.data)
