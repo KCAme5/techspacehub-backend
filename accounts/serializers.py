@@ -27,7 +27,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["email", "password", "referral_code", "full_name"]
+        fields = ["email", "password", "referral_code", "full_name", "role"]
 
     def validate_email(self, value):
         value = value.strip().lower()
@@ -56,7 +56,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             username=username, email=email, is_active=False
         )  # inactive until email verified
         user.set_password(password)
-        user.role = "student"
+        user.role = validated_data.get("role", "student")
         user.subscription_status = "inactive"
         user.my_referral_code = str(uuid.uuid4())[:8]
 

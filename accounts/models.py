@@ -15,6 +15,7 @@ class User(AbstractUser):
         ("staff", "staff"),
         ("student", "student"),
         ("management", "management"),
+        ("client", "client"),
     )
 
     PLAN_CHOICES = (
