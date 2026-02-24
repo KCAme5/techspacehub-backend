@@ -1,5 +1,6 @@
 from rest_framework import viewsets, status, decorators
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from services.common.permissions import IsOrderOwner, IsServiceStaff
 from services.common.services import BaseServiceLogic
 from .models import WebsiteOrder, WebsiteRevision
@@ -17,8 +18,11 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(client=self.request.user)
 
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner])
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner], throttle_classes=[ScopedRateThrottle])
     def generate_preview(self, request, pk=None):
+        # Throttle scope to prevent CPU exhaustion on the 16GB Oracle Cloud VM
+        self.throttle_scope = 'ai_generate'
+        
         order = self.get_object()
         # Trigger Celery task for AI generation
         from .tasks import generate_ai_website

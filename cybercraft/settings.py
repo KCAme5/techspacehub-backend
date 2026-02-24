@@ -273,6 +273,7 @@ REST_FRAMEWORK = {
         "login": "5/min",
         "signup": "3/min",
         "payment": "10/hour",  # Prevent payment spam
+        "ai_generate": "5/hour", # Limit intensive CPU processing to 5 websites per user per hour
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,

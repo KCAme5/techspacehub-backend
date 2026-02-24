@@ -10,7 +10,7 @@ class WebsiteRevisionSerializer(serializers.ModelSerializer):
 class WebsiteOrderCreateSerializer(BaseServiceOrderSerializer):
     class Meta(BaseServiceOrderSerializer.Meta):
         model = WebsiteOrder
-        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'notes']
+        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline']
 
 class WebsiteOrderProgressSerializer(BaseServiceOrderSerializer):
     revisions = WebsiteRevisionSerializer(many=True, read_only=True)
