@@ -13,6 +13,7 @@ User = settings.AUTH_USER_MODEL
 
 
 class Payment(models.Model):
+    id = models.BigAutoField(primary_key=True)
     METHOD_CHOICES = [
         ("mpesa_stk", "M-Pesa STK Push (Lipana)"),
         ("mpesa", "M-Pesa (Legacy STK)"),
