@@ -7,13 +7,24 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from .env file
-env_path = os.path.join(BASE_DIR, ".env")
-if os.path.exists(env_path):
-    load_dotenv(env_path, override=True)
-else:
-    # Try one level up just in case
-    load_dotenv(os.path.join(BASE_DIR, "..", ".env"), override=True)
+# --- LOAD ENVIRONMENT VARIABLES ---
+# Try multiple locations for .env
+env_locations = [
+    os.path.join(BASE_DIR, ".env"),
+    os.path.join(BASE_DIR, "..", ".env"),
+    ".env"
+]
+
+env_found = False
+for loc in env_locations:
+    if os.path.exists(loc):
+        load_dotenv(loc, override=True)
+        print(f"[Config] Loaded environment from: {loc}")
+        env_found = True
+        break
+
+if not env_found:
+    print("[Config] WARNING: No .env file found. Using system environment variables.")
 
 # Security
 SECRET_KEY = os.getenv("SECRET_KEY", "generate-a-strong-key-here-for-now")
@@ -177,6 +188,13 @@ if not DEBUG and ("127.0.0.1" in REDIS_URL or "localhost" in REDIS_URL):
     # it's likely a configuration error. We'll log it clearly.
     print("[WARNING] Production environment detected but Redis is pointing to localhost!")
     print(f"[WARNING] REDIS_URL: {REDIS_URL}")
+
+# CRITICAL LOGGING: This will help us debug the live connection issue
+print(f"[Config] --- REDIS DEBUG START ---")
+print(f"[Config] env_broker_url: {env_broker_url[:20] if env_broker_url else 'None'}...")
+print(f"[Config] REDIS_URL: {REDIS_URL[:20] if REDIS_URL else 'None'}...")
+print(f"[Config] CELERY_BROKER_URL: {CELERY_BROKER_URL[:20] if CELERY_BROKER_URL else 'None'}...")
+print(f"[Config] --- REDIS DEBUG END ---")
 
 # Print for debugging in server logs (safe masking)
 print(f"[Config] Redis connection string determined. Host: {REDIS_HOST}, Port: {REDIS_PORT}")
