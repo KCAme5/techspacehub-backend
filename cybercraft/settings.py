@@ -8,7 +8,12 @@ from datetime import timedelta
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load environment variables from .env file
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+env_path = os.path.join(BASE_DIR, ".env")
+if os.path.exists(env_path):
+    load_dotenv(env_path, override=True)
+else:
+    # Try one level up just in case
+    load_dotenv(os.path.join(BASE_DIR, "..", ".env"), override=True)
 
 # Security
 SECRET_KEY = os.getenv("SECRET_KEY", "generate-a-strong-key-here-for-now")
@@ -117,8 +122,9 @@ ASGI_APPLICATION = "cybercraft.asgi.application"
 # 1. Capture environment variables (strip quotes if present)
 def get_env_stripped(key, default=None):
     val = os.getenv(key, default)
-    if val and isinstance(val, str):
-        return val.strip("'").strip('"').strip()
+    if val is not None and isinstance(val, str):
+        stripped = val.strip("'").strip('"').strip()
+        return stripped if stripped else None
     return val
 
 env_broker_url = get_env_stripped('CELERY_BROKER_URL')
@@ -131,23 +137,46 @@ REDIS_PORT = get_env_stripped('REDIS_PORT', '6379')
 REDIS_PASSWORD = get_env_stripped('REDIS_PASSWORD', '')
 
 # 3. Determine the master Redis URL
-# Prioritize full URLs from environment
-if env_broker_url:
-    REDIS_URL = env_broker_url
-elif env_redis_url:
-    REDIS_URL = env_redis_url
-elif env_result_backend:
-    REDIS_URL = env_result_backend
-else:
-    # Construct from components
+# We want to find a remote URL if possible, especially in production
+potential_urls = [env_broker_url, env_redis_url, env_result_backend]
+REDIS_URL = None
+
+# First pass: look for a non-localhost URL
+for url in potential_urls:
+    if url and "127.0.0.1" not in url and "localhost" not in url:
+        REDIS_URL = url
+        break
+
+# Second pass: if still no URL, take the first available one
+if not REDIS_URL:
+    for url in potential_urls:
+        if url:
+            REDIS_URL = url
+            break
+
+# Third pass: fallback to components or default
+if not REDIS_URL:
     if REDIS_PASSWORD:
         REDIS_URL = f'redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0'
     else:
         REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 
 # 4. Final assignments to ensure consistency across all services
-CELERY_BROKER_URL = env_broker_url or REDIS_URL
-CELERY_RESULT_BACKEND = env_result_backend or REDIS_URL
+# If we found a remote URL, we force all Redis-dependent services to use it.
+# This prevents mixed configurations where the broker is remote but results are local.
+if REDIS_URL and ("127.0.0.1" not in REDIS_URL and "localhost" not in REDIS_URL):
+    CELERY_BROKER_URL = REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
+else:
+    CELERY_BROKER_URL = env_broker_url or REDIS_URL
+    CELERY_RESULT_BACKEND = env_result_backend or REDIS_URL
+
+# Safety check for production
+if not DEBUG and ("127.0.0.1" in REDIS_URL or "localhost" in REDIS_URL):
+    # If we're in production but somehow got localhost, and we have REDIS_PASSWORD,
+    # it's likely a configuration error. We'll log it clearly.
+    print("[WARNING] Production environment detected but Redis is pointing to localhost!")
+    print(f"[WARNING] REDIS_URL: {REDIS_URL}")
 
 # Print for debugging in server logs (safe masking)
 print(f"[Config] Redis connection string determined. Host: {REDIS_HOST}, Port: {REDIS_PORT}")
