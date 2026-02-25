@@ -7,6 +7,19 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# -------------------------------
+# CELERY CONFIG (must be early!)
+# -------------------------------
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND')
+
+# Safety print for logs
+print(f"[CELERY] BROKER: {CELERY_BROKER_URL}")
+print(f"[CELERY] BACKEND: {CELERY_RESULT_BACKEND}")
+
+if not CELERY_BROKER_URL:
+    raise ValueError("CELERY_BROKER_URL not set in environment!")
+    
 # --- LOAD ENVIRONMENT VARIABLES ---
 # Try multiple locations for .env
 env_locations = [
