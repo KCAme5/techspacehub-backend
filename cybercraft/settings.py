@@ -112,15 +112,17 @@ TEMPLATES = [
 WSGI_APPLICATION = "cybercraft.wsgi.application"
 ASGI_APPLICATION = "cybercraft.asgi.application"
 
-# Channels Redis Layer (Using the same Redis instance as Celery)
-# Channels configuration
-REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
+# Channels Redis Layer
+# In Docker/Production, set REDIS_URL or REDIS_HOST
+REDIS_HOST = os.getenv('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = os.getenv('REDIS_PORT', '6379')
+REDIS_URL = os.getenv('REDIS_URL', f'redis://{REDIS_HOST}:{REDIS_PORT}/0')
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')],
+            "hosts": [REDIS_URL],
         },
     },
 }
