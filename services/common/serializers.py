@@ -20,6 +20,7 @@ class BaseServiceOrderSerializer(serializers.ModelSerializer):
     status_history = serializers.SerializerMethodField()
     
     class Meta:
+        # model should be specified in child classes
         fields = [
             'id', 'client', 'client_detail', 'service_type', 'mode', 
             'status', 'total_price', 'payment', 'consent_given', 

@@ -1,4 +1,4 @@
-from rest_framework import viewsets, status, decorators
+from rest_framework import viewsets, status, decorators, permissions
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from services.common.permissions import IsOrderOwner, IsServiceStaff
@@ -8,7 +8,12 @@ from .serializers import WebsiteOrderCreateSerializer, WebsiteOrderProgressSeria
 
 class WebsiteOrderViewSet(viewsets.ModelViewSet):
     queryset = WebsiteOrder.objects.all()
-    permission_classes = [IsOrderOwner | IsServiceStaff]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve', 'update', 'partial_update', 'destroy', 'generate_preview', 'request_revision', 'mark_consent']:
+            return [IsOrderOwner() | IsServiceStaff()]
+        return [permissions.IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -16,9 +21,16 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
         return WebsiteOrderProgressSerializer
 
     def perform_create(self, serializer):
-        serializer.save(client=self.request.user)
+        # Ensure service_type and total_price are set if not provided in payload
+        # though payload usually has them, model level validation might fail
+        # if they are not explicitly handled by the serializer correctly.
+        serializer.save(
+            client=self.request.user,
+            service_type='website',
+            status='draft'
+        )
 
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner], throttle_classes=[ScopedRateThrottle])
+    @decorators.action(detail=True, methods=['post'], throttle_classes=[ScopedRateThrottle])
     def generate_preview(self, request, pk=None):
         # Throttle scope to prevent CPU exhaustion on the 16GB Oracle Cloud VM
         self.throttle_scope = 'ai_generate'
@@ -31,7 +43,7 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
         BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="AI website generation triggered.")
         return Response({'status': 'generation triggered'}, status=status.HTTP_200_OK)
 
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner])
+    @decorators.action(detail=True, methods=['post'])
     def request_revision(self, request, pk=None):
         order = self.get_object()
         if order.revision_count <= 0:
@@ -48,7 +60,7 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
         BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="Revision requested by client.")
         return Response({'status': 'revision requested'}, status=status.HTTP_200_OK)
 
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner])
+    @decorators.action(detail=True, methods=['post'])
     def mark_consent(self, request, pk=None):
         order = self.get_object()
         ip = request.META.get('REMOTE_ADDR')
