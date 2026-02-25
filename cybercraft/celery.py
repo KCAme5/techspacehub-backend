@@ -1,7 +1,6 @@
 # cybercraft/celery.py
 import os
 from celery import Celery
-from services.websites.tasks import *
 
 # Set Django settings module
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cybercraft.settings')
