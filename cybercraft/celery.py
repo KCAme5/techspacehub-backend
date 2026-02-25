@@ -1,17 +1,21 @@
 # cybercraft/celery.py
 import os
 from celery import Celery
+from services.websites.tasks import *
 
 # Set Django settings module
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cybercraft.settings')
 
 app = Celery('cybercraft')
 
+app.autodiscover_tasks([
+    'services.websites.tasks',
+    'services.audits.tasks',
+])
+
 # Load config from Django settings with CELERY_ namespace
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
-# Auto-discover tasks in all installed apps
-app.autodiscover_tasks()
 
 @app.task(bind=True, ignore_result=True)
 def debug_task(self):
