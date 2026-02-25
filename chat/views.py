@@ -113,7 +113,8 @@ def chat_stream(request):
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import json
 import os
 import logging
@@ -124,51 +125,10 @@ logger = logging.getLogger(__name__)
 
 # Configure Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_AVAILABLE = False
-AVAILABLE_MODELS = []
-
-# In your backend views.py, update the SYSTEM_PROMPT:
-
-SYSTEM_PROMPT = """You are a helpful programming tutor for TechSpace. When providing code examples:
-
-1. Use proper markdown formatting with code blocks
-2. Specify the programming language after the triple backticks
-3. Keep explanations clear and concise
-4. Use bullet points for lists
-5. Use **bold** for important concepts
-6. Use ___ or --- or *** for horizontal lines
-
-Example format:
-```python
-print("Hello, World!")
-
-You need to use lines to separate paragraphs or sections of your chat
-You must also answer all learning questions correctly except where asked to generate malicious stuffs, notify the user that it is prohibited
-
-"""
-
+client = None
 if GEMINI_API_KEY:
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-
-        # List available models to see what we can use
-        try:
-            models = genai.list_models()
-            for model in models:
-                if "generateContent" in model.supported_generation_methods:
-                    AVAILABLE_MODELS.append(model.name)
-
-            if AVAILABLE_MODELS:
-                GEMINI_AVAILABLE = True
-
-            else:
-                logger.warning(
-                    "No Gemini models available with generateContent support"
-                )
-
-        except Exception as model_error:
-            logger.error(f"Failed to list Gemini models: {str(model_error)}")
-
+        client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception as e:
         logger.error(f"Gemini configuration failed: {str(e)}")
 else:
@@ -176,8 +136,8 @@ else:
 
 
 def get_gemini_response(messages):
-    """Get response from Google Gemini using available models"""
-    if not GEMINI_AVAILABLE or not AVAILABLE_MODELS:
+    """Get response from Google Gemini using the new SDK"""
+    if not client:
         return None
 
     try:
@@ -197,63 +157,22 @@ Conversation so far:\n"""
         current_question = messages[-1].get("content", "") if messages else ""
         conversation_text += f"\nStudent: {current_question}\nAssistant:"
 
-        # Try the most stable models first
-        preferred_models = [
-            "gemini-2.0-flash-001",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-pro-latest",
-            "gemini-flash-latest",
-        ]
-
-        # Try preferred models first
-        for model_name in preferred_models:
-            if f"models/{model_name}" in AVAILABLE_MODELS:
-                try:
-                    logger.info(f"Trying preferred model: {model_name}")
-                    model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(
-                        conversation_text,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.7,
-                            max_output_tokens=800,
-                        ),
-                    )
-                    logger.info(f"Successfully used model: {model_name}")
-                    return response.text
-                except Exception as model_error:
-                    logger.warning(
-                        f"Preferred model {model_name} failed: {str(model_error)}"
-                    )
-                    continue
-
-        for model_name in AVAILABLE_MODELS:
-            short_name = model_name.replace("models/", "")
-            # Skip models that are clearly not for text generation
-            if any(
-                x in short_name
-                for x in ["image", "tts", "thinking", "robotics", "computer-use"]
-            ):
-                continue
-
-            try:
-                logger.info(f"Trying fallback model: {short_name}")
-                model = genai.GenerativeModel(short_name)
-                response = model.generate_content(
-                    conversation_text,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.7,
-                        max_output_tokens=800,
-                    ),
-                )
-                logger.info(f"Successfully used fallback model: {short_name}")
-                return response.text
-            except Exception as model_error:
-                logger.warning(f"Model {short_name} failed: {str(model_error)}")
-                continue
-
-        logger.error("All models failed")
-        return None
+        # Use the most stable model
+        model_name = "gemini-2.0-flash"
+        
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=conversation_text,
+                config=types.GenerateContentConfig(
+                    temperature=0.7,
+                    max_output_tokens=800,
+                ),
+            )
+            return response.text
+        except Exception as model_error:
+            logger.error(f"Gemini model {model_name} failed: {str(model_error)}")
+            return None
 
     except Exception as e:
         logger.error(f"Gemini API error: {str(e)}")
@@ -293,7 +212,7 @@ def chat(request):
 
         # Try Gemini if available
         ai_reply = None
-        if GEMINI_AVAILABLE:
+        if client:
             ai_reply = get_gemini_response(messages)
 
         # If Gemini fails or isn't available, use enhanced fallback
@@ -304,8 +223,7 @@ def chat(request):
             {
                 "reply": ai_reply,
                 "message_id": f"msg_{len(conversation_history) + 1}",
-                "source": "gemini" if ai_reply and GEMINI_AVAILABLE else "fallback",
-                "available_models": AVAILABLE_MODELS if GEMINI_AVAILABLE else [],
+                "source": "gemini" if ai_reply and client else "fallback",
             }
         )
 
@@ -324,8 +242,7 @@ def chat(request):
 def test_models(request):
     return JsonResponse(
         {
-            "gemini_available": GEMINI_AVAILABLE,
-            "available_models": AVAILABLE_MODELS,
+            "gemini_available": bool(client),
             "gemini_api_key_set": bool(GEMINI_API_KEY),
         }
     )
@@ -334,20 +251,22 @@ def test_models(request):
 @csrf_exempt
 def test_gemini_working(request):
     """Test if Gemini is actually working"""
-    if not GEMINI_AVAILABLE:
+    if not client:
         return JsonResponse({"status": "error", "message": "Gemini not available"})
 
     try:
         # Simple test with a stable model
-        model = genai.GenerativeModel("gemini-2.0-flash-001")
-        response = model.generate_content("Say 'Gemini is working!' in one sentence.")
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents="Say 'Gemini is working!' in one sentence."
+        )
 
         return JsonResponse(
             {
                 "status": "success",
                 "message": "Gemini is working!",
                 "response": response.text,
-                "tested_model": "gemini-2.0-flash-001",
+                "tested_model": "gemini-2.0-flash",
             }
         )
 
@@ -356,7 +275,6 @@ def test_gemini_working(request):
             {
                 "status": "error",
                 "message": f"Gemini test failed: {str(e)}",
-                "available_models": AVAILABLE_MODELS,
             }
         )
 
