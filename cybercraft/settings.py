@@ -113,11 +113,14 @@ WSGI_APPLICATION = "cybercraft.wsgi.application"
 ASGI_APPLICATION = "cybercraft.asgi.application"
 
 # Channels Redis Layer (Using the same Redis instance as Celery)
+# Channels configuration
+REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')
+
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [os.getenv('REDIS_URL', 'redis://127.0.0.1:6379/0')],
         },
     },
 }
@@ -413,9 +416,10 @@ if not DEBUG:
 REPORTS_ROOT = os.path.join(MEDIA_ROOT, 'reports')
 
 # Celery Configuration
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
-CELERY_ACCEPT_CONTENT = ['json']
+# Celery settings
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
+CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'Africa/Nairobi'
+CELERY_TIMEZONE = TIME_ZONE

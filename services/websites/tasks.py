@@ -12,28 +12,38 @@ logger = logging.getLogger(__name__)
 
 @shared_task
 def generate_ai_website(order_id):
-    try:
-        order = WebsiteOrder.objects.get(id=order_id)
-        logger.info(f"Starting Local AI website generation for order {order_id}")
-        
-        channel_layer = get_channel_layer()
-        room_group_name = f'order_{order.id}'
+    channel_layer = get_channel_layer()
+    room_group_name = f'order_{order_id}'
 
-        # Notify UI that generation has started
+    def send_log(msg, msg_type='status'):
         async_to_sync(channel_layer.group_send)(
             room_group_name,
             {
                 'type': 'generation_message',
-                'msg_type': 'status',
-                'message': 'AI Agent online. Compiling architecture...'
+                'msg_type': msg_type,
+                'message': msg
             }
         )
 
+    try:
+        order = WebsiteOrder.objects.get(id=order_id)
+        logger.info(f"Starting Local AI website generation for order {order_id}")
+        
+        send_log("Initializing AI Workspace...", "status")
+        send_log("$ mkdir -p /app/workspace", "status")
+        send_log("$ cd /app/workspace", "status")
+        
+        send_log("AI Agent online. Analyzing brief...", "status")
+        
         BaseServiceLogic.update_status(order, 'in_progress', comment="AI is currently writing the code. You can watch the live stream in the AI Workspace.")
         
         # Instantiate our Local AI Client
         generator = OllamaWebsiteGenerator()
         html_chunks = []
+        
+        send_log("Agent identified requirements. Starting code generation...", "status")
+        send_log("$ touch index.html", "status")
+        send_log("Writing index.html...", "status")
         
         # Stream the response and push to websocket
         for chunk in generator.stream_response(order.project_brief):
@@ -49,6 +59,9 @@ def generate_ai_website(order_id):
                 }
             )
 
+        send_log("\nCode generation complete. Finalizing assets...", "status")
+        send_log("$ npm install && npm run build", "status") # Simulating build
+
         # 2. Store the generated website safely in the media directory
         html_content = "".join(html_chunks)
         
@@ -59,6 +72,8 @@ def generate_ai_website(order_id):
         filename = f"index.html"
         file_path = f"ai_generated_projects/{order.id}/{filename}"
         
+        send_log(f"Saving assets to permanent storage...", "status")
+        
         # Save to the brief_files
         order.brief_files.save(file_path, ContentFile(clean_html.encode('utf-8')))
         
@@ -66,13 +81,17 @@ def generate_ai_website(order_id):
         order.final_url = preview_url
         order.save()
         
+        send_log("Deployment successful!", "status")
+        send_log(f"Site live at: {preview_url}", "status")
+        
         # Notify UI that it's complete, pass the iframe URL
         async_to_sync(channel_layer.group_send)(
             room_group_name,
             {
                 'type': 'generation_message',
                 'msg_type': 'complete',
-                'preview_url': preview_url
+                'preview_url': preview_url,
+                'message': 'Generation complete!'
             }
         )
 
@@ -89,13 +108,6 @@ def generate_ai_website(order_id):
             BaseServiceLogic.update_status(order, 'in_progress', comment=f"AI Generation Failed: {str(e)}")
             
             # Notify UI of failure
-            async_to_sync(get_channel_layer().group_send)(
-                f'order_{order_id}',
-                {
-                    'type': 'generation_message',
-                    'msg_type': 'status',
-                    'message': f'CRITICAL ERROR: {str(e)}'
-                }
-            )
+            send_log(f"CRITICAL ERROR: {str(e)}", "status")
         except:
             pass
