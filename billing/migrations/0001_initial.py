@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='Payment',
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, unique=True, verbose_name='ID')),
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('amount', models.DecimalField(decimal_places=2, max_digits=10)),
                 ('plan', models.CharField(default='free', max_length=20)),
                 ('currency', models.CharField(default='KES', max_length=10)),
