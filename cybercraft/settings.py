@@ -5,9 +5,10 @@ from dotenv import load_dotenv
 import dj_database_url
 from datetime import timedelta
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # Security
 SECRET_KEY = os.getenv("SECRET_KEY", "generate-a-strong-key-here-for-now")
@@ -112,11 +113,50 @@ TEMPLATES = [
 WSGI_APPLICATION = "cybercraft.wsgi.application"
 ASGI_APPLICATION = "cybercraft.asgi.application"
 
-# Channels Redis Layer
-# In Docker/Production, set REDIS_URL or REDIS_HOST
-REDIS_HOST = os.getenv('REDIS_HOST', '127.0.0.1')
-REDIS_PORT = os.getenv('REDIS_PORT', '6379')
-REDIS_URL = os.getenv('REDIS_URL', f'redis://{REDIS_HOST}:{REDIS_PORT}/0')
+# --- REDIS & CELERY CONFIGURATION ---
+# 1. Capture environment variables (strip quotes if present)
+def get_env_stripped(key, default=None):
+    val = os.getenv(key, default)
+    if val and isinstance(val, str):
+        return val.strip("'").strip('"').strip()
+    return val
+
+env_broker_url = get_env_stripped('CELERY_BROKER_URL')
+env_result_backend = get_env_stripped('CELERY_RESULT_BACKEND')
+env_redis_url = get_env_stripped('REDIS_URL')
+
+# 2. Capture component-based variables
+REDIS_HOST = get_env_stripped('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = get_env_stripped('REDIS_PORT', '6379')
+REDIS_PASSWORD = get_env_stripped('REDIS_PASSWORD', '')
+
+# 3. Determine the master Redis URL
+# Prioritize full URLs from environment
+if env_broker_url:
+    REDIS_URL = env_broker_url
+elif env_redis_url:
+    REDIS_URL = env_redis_url
+elif env_result_backend:
+    REDIS_URL = env_result_backend
+else:
+    # Construct from components
+    if REDIS_PASSWORD:
+        REDIS_URL = f'redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0'
+    else:
+        REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+
+# 4. Final assignments to ensure consistency across all services
+CELERY_BROKER_URL = env_broker_url or REDIS_URL
+CELERY_RESULT_BACKEND = env_result_backend or REDIS_URL
+
+# Print for debugging in server logs (safe masking)
+print(f"[Config] Redis connection string determined. Host: {REDIS_HOST}, Port: {REDIS_PORT}")
+if REDIS_URL.startswith('redis://'):
+    parts = REDIS_URL.split('@')
+    if len(parts) > 1:
+        print(f"[Config] Using Authenticated Redis: {parts[1]}")
+    else:
+        print(f"[Config] Using Redis: {REDIS_URL}")
 
 CHANNEL_LAYERS = {
     "default": {
@@ -418,9 +458,6 @@ if not DEBUG:
 REPORTS_ROOT = os.path.join(MEDIA_ROOT, 'reports')
 
 # Celery Configuration
-# Celery settings
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL)
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', REDIS_URL)
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
