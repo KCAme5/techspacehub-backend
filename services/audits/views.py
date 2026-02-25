@@ -1,13 +1,19 @@
 from rest_framework import viewsets, status, decorators
 from rest_framework.response import Response
-from services.common.permissions import IsOrderOwner, IsServiceStaff
+from services.common.permissions import IsOrderOwner, IsServiceStaff, IsOwnerOrStaff
 from services.common.services import BaseServiceLogic
 from .models import AuditOrder, ScanResult
 from .serializers import AuditOrderCreateSerializer, AuditOrderDetailSerializer, ScanResultSerializer
 
 class AuditOrderViewSet(viewsets.ModelViewSet):
     queryset = AuditOrder.objects.all()
-    permission_classes = [IsOrderOwner | IsServiceStaff]
+    permission_classes = [IsOwnerOrStaff]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['management', 'staff'] or user.is_staff:
+            return AuditOrder.objects.all()
+        return AuditOrder.objects.filter(client=user)
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -24,7 +30,7 @@ class AuditOrderViewSet(viewsets.ModelViewSet):
         BaseServiceLogic.mark_consent_given(order, ip)
         return Response({'status': 'consent marked'}, status=status.HTTP_200_OK)
 
-    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOrderOwner | IsServiceStaff])
+    @decorators.action(detail=True, methods=['post'], permission_classes=[IsOwnerOrStaff])
     def trigger_scan(self, request, pk=None):
         order = self.get_object()
         if not order.consent_given:
@@ -61,7 +67,7 @@ class AuditOrderViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    @decorators.action(detail=True, methods=['get'], permission_classes=[IsOrderOwner | IsServiceStaff])
+    @decorators.action(detail=True, methods=['get'], permission_classes=[IsOwnerOrStaff])
     def results(self, request, pk=None):
         order = self.get_object()
         results = ScanResult.objects.filter(order=order)

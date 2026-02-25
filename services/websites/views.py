@@ -1,7 +1,7 @@
 from rest_framework import viewsets, status, decorators, permissions
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
-from services.common.permissions import IsOrderOwner, IsServiceStaff
+from services.common.permissions import IsOrderOwner, IsServiceStaff, IsOwnerOrStaff
 from services.common.services import BaseServiceLogic
 from .models import WebsiteOrder, WebsiteRevision
 from .serializers import WebsiteOrderCreateSerializer, WebsiteOrderProgressSerializer, WebsiteRevisionSerializer
@@ -10,9 +10,15 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
     queryset = WebsiteOrder.objects.all()
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+        if user.role in ['management', 'staff'] or user.is_staff:
+            return WebsiteOrder.objects.all()
+        return WebsiteOrder.objects.filter(client=user)
+
     def get_permissions(self):
-        if self.action in ['list', 'retrieve', 'update', 'partial_update', 'destroy', 'generate_preview', 'request_revision', 'mark_consent']:
-            return [IsOrderOwner() | IsServiceStaff()]
+        if self.action in ['list', 'retrieve', 'update', 'partial_update', 'destroy', 'generate_preview', 'generate', 'request_revision', 'mark_consent']:
+            return [IsOwnerOrStaff()]
         return [permissions.IsAuthenticated()]
 
     def get_serializer_class(self):
@@ -41,6 +47,29 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
         generate_ai_website.delay(order.id)
         
         BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="AI website generation triggered.")
+        return Response({'status': 'generation triggered'}, status=status.HTTP_200_OK)
+
+    @decorators.action(detail=False, methods=['post'])
+    def generate(self, request):
+        """Legacy/Fallback endpoint for AI generation"""
+        order_id = request.data.get('order_id')
+        if not order_id:
+            return Response({'error': 'order_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            order = WebsiteOrder.objects.get(id=order_id)
+        except (WebsiteOrder.DoesNotExist, ValueError):
+            return Response({'error': 'Order not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+        # Check permissions manually for detail=False action
+        if not (request.user.role in ['management', 'staff'] or request.user.is_staff or order.client == request.user):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Trigger Celery task for AI generation
+        from .tasks import generate_ai_website
+        generate_ai_website.delay(order.id)
+        
+        BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="AI website generation triggered via fallback endpoint.")
         return Response({'status': 'generation triggered'}, status=status.HTTP_200_OK)
 
     @decorators.action(detail=True, methods=['post'])

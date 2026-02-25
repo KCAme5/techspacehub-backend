@@ -25,6 +25,20 @@ class IsServiceStaff(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.role in ['management', 'staff'] or request.user.is_staff
 
+class IsOwnerOrStaff(permissions.BasePermission):
+    """
+    Combined permission for Order Owner or Service Staff.
+    """
+    def has_permission(self, request, view):
+        return request.user and request.user.is_authenticated
+
+    def has_object_permission(self, request, view, obj):
+        # Staff check
+        if request.user.role in ['management', 'staff'] or request.user.is_staff:
+            return True
+        # Owner check
+        return hasattr(obj, 'client') and obj.client == request.user
+
 class CanClaimOrder(permissions.BasePermission):
     """
     Qualified agents (logic checks labs/courses completion later).
