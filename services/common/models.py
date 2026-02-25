@@ -43,8 +43,7 @@ class ServiceOrder(TimestampedModel):
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        related_name="%(class)s_orders",
-        to_field="id"
+        related_name="%(class)s_orders"
     )
     
     # Consent fields (DPA Compliance)
