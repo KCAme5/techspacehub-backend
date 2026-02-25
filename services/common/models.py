@@ -32,7 +32,7 @@ class ServiceOrder(TimestampedModel):
     client = models.ForeignKey(
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
-        related_name="%(class)s_orders"
+        related_name="%(class)s_client_orders"
     )
     service_type = models.CharField(max_length=20, choices=SERVICE_TYPE_CHOICES)
     mode = models.CharField(max_length=50) # 'automated'/'manned' for audits, 'ai'/'manual' for websites
@@ -43,7 +43,7 @@ class ServiceOrder(TimestampedModel):
         on_delete=models.SET_NULL, 
         null=True, 
         blank=True, 
-        related_name="%(class)s_orders"
+        related_name="%(class)s_payment_orders"
     )
     
     # Consent fields (DPA Compliance)
