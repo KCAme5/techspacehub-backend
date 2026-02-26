@@ -114,6 +114,13 @@ class OllamaWebsiteGenerator:
         """
         Generator for Server-Sent Events (SSE). Streams chunks back to UI.
         """
+        if not brief:
+            logger.error("stream_response called with empty brief!")
+            yield "<!-- Error: No project brief provided -->"
+            return
+
+        logger.info(f"Starting stream_response to {self.host} with model {self.model}")
+
         prompt = f"System: {self._build_system_prompt()}\n\nUser: Build a complete webpage based on this brief: {brief}"
 
         payload = {
@@ -124,14 +131,38 @@ class OllamaWebsiteGenerator:
         }
 
         try:
+            logger.info(f"Sending POST to {self.api_url}")
             with requests.post(
-                self.api_url, json=payload, stream=True, timeout=60
+                self.api_url, json=payload, stream=True, timeout=300
             ) as r:
+                logger.info(f"Response status: {r.status_code}")
                 r.raise_for_status()
+                chunk_count = 0
                 for line in r.iter_lines():
                     if line:
-                        chunk = json.loads(line)
-                        yield chunk.get("response", "")
+                        chunk_count += 1
+                        try:
+                            chunk = json.loads(line)
+                            response_text = chunk.get("response", "")
+                            if chunk_count <= 5 or chunk_count % 50 == 0:
+                                logger.info(
+                                    f"Received chunk {chunk_count}: {response_text[:50]}..."
+                                )
+                            yield response_text
+                        except json.JSONDecodeError as je:
+                            logger.error(
+                                f"JSON decode error on chunk {chunk_count}: {str(je)}"
+                            )
+                            continue
+                logger.info(f"Stream complete. Total chunks: {chunk_count}")
+        except requests.exceptions.Timeout:
+            logger.error(f"Ollama Streaming Error: Timeout after 300 seconds")
+            yield f"\n\n<!-- Error: AI generation timed out -->"
+        except requests.exceptions.ConnectionError as ce:
+            logger.error(
+                f"Ollama Streaming Error: Connection failed to {self.host}: {str(ce)}"
+            )
+            yield f"\n\n<!-- Error: Cannot connect to AI backend at {self.host} -->"
         except Exception as e:
             logger.error(f"Ollama Streaming Error: {str(e)}")
             yield f"\n\n<!-- Error streaming AI response: {str(e)} -->"
