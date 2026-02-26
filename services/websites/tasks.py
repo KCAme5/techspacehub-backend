@@ -89,6 +89,11 @@ def generate_ai_website(order_id):
         order.brief_files.save(file_path, ContentFile(clean_html.encode("utf-8")))
 
         preview_url = order.brief_files.url
+        # Ensure full URL for cross-origin iframe (frontend on Vercel, backend on Coolify)
+        if preview_url.startswith("/"):
+            from django.conf import settings
+
+            preview_url = f"{settings.BACKEND_URL}{preview_url}"
         order.final_url = preview_url
         order.save()
 
