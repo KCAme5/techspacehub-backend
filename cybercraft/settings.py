@@ -10,8 +10,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # -------------------------------
 # CELERY CONFIG (must be early!)
 # -------------------------------
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL')
-CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND')
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
 
 # Safety print for logs
 print(f"[CELERY] BROKER: {CELERY_BROKER_URL}")
@@ -19,13 +19,13 @@ print(f"[CELERY] BACKEND: {CELERY_RESULT_BACKEND}")
 
 if not CELERY_BROKER_URL:
     raise ValueError("CELERY_BROKER_URL not set in environment!")
-    
+
 # --- LOAD ENVIRONMENT VARIABLES ---
 # Try multiple locations for .env
 env_locations = [
     os.path.join(BASE_DIR, ".env"),
     os.path.join(BASE_DIR, "..", ".env"),
-    ".env"
+    ".env",
 ]
 
 env_found = False
@@ -142,6 +142,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "cybercraft.wsgi.application"
 ASGI_APPLICATION = "cybercraft.asgi.application"
 
+
 # --- REDIS & CELERY CONFIGURATION ---
 # 1. Capture environment variables (strip quotes if present)
 def get_env_stripped(key, default=None):
@@ -151,14 +152,15 @@ def get_env_stripped(key, default=None):
         return stripped if stripped else None
     return val
 
-env_broker_url = get_env_stripped('CELERY_BROKER_URL')
-env_result_backend = get_env_stripped('CELERY_RESULT_BACKEND')
-env_redis_url = get_env_stripped('REDIS_URL')
+
+env_broker_url = get_env_stripped("CELERY_BROKER_URL")
+env_result_backend = get_env_stripped("CELERY_RESULT_BACKEND")
+env_redis_url = get_env_stripped("REDIS_URL")
 
 # 2. Capture component-based variables
-REDIS_HOST = get_env_stripped('REDIS_HOST', '127.0.0.1')
-REDIS_PORT = get_env_stripped('REDIS_PORT', '6379')
-REDIS_PASSWORD = get_env_stripped('REDIS_PASSWORD', '')
+REDIS_HOST = get_env_stripped("REDIS_HOST", "127.0.0.1")
+REDIS_PORT = get_env_stripped("REDIS_PORT", "6379")
+REDIS_PASSWORD = get_env_stripped("REDIS_PASSWORD", "")
 
 # 3. Determine the master Redis URL
 # We want to find a remote URL if possible, especially in production
@@ -181,9 +183,9 @@ if not REDIS_URL:
 # Third pass: fallback to components or default
 if not REDIS_URL:
     if REDIS_PASSWORD:
-        REDIS_URL = f'redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0'
+        REDIS_URL = f"redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0"
     else:
-        REDIS_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+        REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
 
 # 4. Final assignments to ensure consistency across all services
 # If we found a remote URL, we force all Redis-dependent services to use it.
@@ -199,20 +201,28 @@ else:
 if not DEBUG and ("127.0.0.1" in REDIS_URL or "localhost" in REDIS_URL):
     # If we're in production but somehow got localhost, and we have REDIS_PASSWORD,
     # it's likely a configuration error. We'll log it clearly.
-    print("[WARNING] Production environment detected but Redis is pointing to localhost!")
+    print(
+        "[WARNING] Production environment detected but Redis is pointing to localhost!"
+    )
     print(f"[WARNING] REDIS_URL: {REDIS_URL}")
 
 # CRITICAL LOGGING: This will help us debug the live connection issue
 print(f"[Config] --- REDIS DEBUG START ---")
-print(f"[Config] env_broker_url: {env_broker_url[:20] if env_broker_url else 'None'}...")
+print(
+    f"[Config] env_broker_url: {env_broker_url[:20] if env_broker_url else 'None'}..."
+)
 print(f"[Config] REDIS_URL: {REDIS_URL[:20] if REDIS_URL else 'None'}...")
-print(f"[Config] CELERY_BROKER_URL: {CELERY_BROKER_URL[:20] if CELERY_BROKER_URL else 'None'}...")
+print(
+    f"[Config] CELERY_BROKER_URL: {CELERY_BROKER_URL[:20] if CELERY_BROKER_URL else 'None'}..."
+)
 print(f"[Config] --- REDIS DEBUG END ---")
 
 # Print for debugging in server logs (safe masking)
-print(f"[Config] Redis connection string determined. Host: {REDIS_HOST}, Port: {REDIS_PORT}")
-if REDIS_URL.startswith('redis://'):
-    parts = REDIS_URL.split('@')
+print(
+    f"[Config] Redis connection string determined. Host: {REDIS_HOST}, Port: {REDIS_PORT}"
+)
+if REDIS_URL.startswith("redis://"):
+    parts = REDIS_URL.split("@")
     if len(parts) > 1:
         print(f"[Config] Using Authenticated Redis: {parts[1]}")
     else:
@@ -386,7 +396,7 @@ REST_FRAMEWORK = {
         "login": "5/min",
         "signup": "3/min",
         "payment": "10/hour",  # Prevent payment spam
-        "ai_generate": "5/hour", # Limit intensive CPU processing to 5 websites per user per hour
+        "ai_generate": "5/hour",  # Limit intensive CPU processing to 5 websites per user per hour
     },
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 100,
@@ -429,7 +439,7 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 10240
 
-X_FRAME_OPTIONS = "SAMEORIGIN"
+X_FRAME_OPTIONS = "ALLOWALL"  # Allow embedding generated HTML in frontend iframe
 ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
 
 # Enhanced Security Settings
@@ -515,10 +525,10 @@ if not DEBUG:
     # These help with larger requests on cloud platforms
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 # Services Settings
-REPORTS_ROOT = os.path.join(MEDIA_ROOT, 'reports')
+REPORTS_ROOT = os.path.join(MEDIA_ROOT, "reports")
 
 # Celery Configuration
-CELERY_ACCEPT_CONTENT = ['application/json']
-CELERY_TASK_SERIALIZER = 'json'
-CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ["application/json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
