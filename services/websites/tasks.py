@@ -88,11 +88,14 @@ def generate_ai_website(order_id):
         # Save to the brief_files
         order.brief_files.save(file_path, ContentFile(clean_html.encode("utf-8")))
 
-        preview_url = order.brief_files.url
-        # Ensure full URL for cross-origin iframe (frontend on Vercel, backend on Coolify)
-        if preview_url.startswith("/"):
-            from django.conf import settings
+        # Use API endpoint to serve the HTML (Daphne doesn't serve media files)
+        from django.urls import reverse
 
+        preview_url = reverse("website-preview", kwargs={"order_id": order.id})
+        # Make absolute URL
+        from django.conf import settings
+
+        if preview_url.startswith("/"):
             preview_url = f"{settings.BACKEND_URL}{preview_url}"
         order.final_url = preview_url
         order.save()
