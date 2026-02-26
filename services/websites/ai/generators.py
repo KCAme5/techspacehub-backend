@@ -5,7 +5,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class WebsiteGenerator:
-    def __init__(self, model="llama3", url="http://localhost:11434/api/generate"):
+    def __init__(self, model="llama3", url="http://ollama-techspacehub:11434/api/generate"):
         self.model = model
         self.url = url
 

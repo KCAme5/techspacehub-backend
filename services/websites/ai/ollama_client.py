@@ -14,7 +14,7 @@ class OllamaWebsiteGenerator:
     Runs locally alongside Django in Coolify/Docker.
     Optimized for 16GB RAM / CPU-only inference.
     """
-    def __init__(self, model="llama3.1:8b", host="http://local-ollama:11434"):
+    def __init__(self, model="llama3.1:8b", host="http://ollama-techspacehub:11434"):
         # local-ollama is the docker network hostname defined in docker-compose
         # fallback to localhost if testing locally outside docker
         self.host = os.environ.get("OLLAMA_HOST", host)
