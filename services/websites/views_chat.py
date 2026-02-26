@@ -9,7 +9,7 @@ from celery import chain
 import logging
 
 from .models import WebsiteOrder
-from .models_conversation import ConversationMessage, CodeRevision
+from .models_conversation import ConversationMessage, CodeRevision, ProjectFile
 from .ai.conversation_client import ConversationalAIClient
 from .tasks import generate_ai_website
 from .tasks_chat import process_revision_request
@@ -91,6 +91,70 @@ class WebsiteAIChatViewSet(viewsets.ViewSet):
                     "status": "processing",
                     "message": "Revision request queued",
                 }
+            )
+
+        except PermissionError as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=["get"])
+    def project_files(self, request, pk=None):
+        """Get all project files for an order (multi-file support)."""
+        try:
+            order = self._get_order(pk)
+            files = order.project_files.all()
+            return Response(
+                {
+                    "files": [
+                        {
+                            "id": str(f.id),
+                            "filename": f.filename,
+                            "file_type": f.file_type,
+                            "content": f.content,
+                            "is_entry_point": f.is_entry_point,
+                            "updated_at": f.updated_at.isoformat(),
+                        }
+                        for f in files
+                    ],
+                    "entry_file": (
+                        files.filter(is_entry_point=True).first().filename
+                        if files.filter(is_entry_point=True).exists()
+                        else "index.html"
+                    ),
+                }
+            )
+        except PermissionError as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=["post"])
+    def save_project_file(self, request, pk=None):
+        """Save/update a specific project file."""
+        try:
+            order = self._get_order(pk)
+            filename = request.data.get("filename", "").strip()
+            content = request.data.get("content", "").strip()
+
+            if not filename or not content:
+                return Response(
+                    {"error": "filename and content are required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            file_type = filename.split(".")[-1] if "." in filename else "other"
+            is_entry = filename in ["index.html", "App.jsx", "App.tsx"]
+
+            # Update or create
+            file_obj, created = ProjectFile.objects.update_or_create(
+                order=order,
+                filename=filename,
+                defaults={
+                    "content": content,
+                    "file_type": file_type,
+                    "is_entry_point": is_entry,
+                },
+            )
+
+            return Response(
+                {"success": True, "created": created, "file_id": str(file_obj.id)}
             )
 
         except PermissionError as e:
@@ -212,3 +276,21 @@ class WebsiteAIChatViewSet(viewsets.ViewSet):
 
         except PermissionError as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=True, methods=["post"])
+    def set_project_type(self, request, pk=None):
+        """Set the project type (single_file, multi_file, react)."""
+        try:
+            order = self._get_order(pk)
+            project_type = request.data.get("project_type", "single_file")
+
+            # Store in order metadata
+            order.ai_project_type = project_type
+            order.save(update_fields=["ai_project_type"])
+
+            return Response({"success": True, "project_type": project_type})
+        except PermissionError as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except Exception as e:
+            logger.error(f"Error setting project type: {e}")
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

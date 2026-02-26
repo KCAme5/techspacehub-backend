@@ -12,6 +12,16 @@ class WebsiteOrder(ServiceOrder):
     revision_count = models.PositiveIntegerField(default=3)
     final_url = models.URLField(blank=True, null=True)
     brief_files = models.FileField(upload_to="briefs/websites/", null=True, blank=True)
+    ai_project_type = models.CharField(
+        max_length=20,
+        choices=[
+            ("single_file", "Single HTML File"),
+            ("multi_file", "HTML/CSS/JS Separate"),
+            ("react", "React Project"),
+        ],
+        default="single_file",
+        help_text="Type of project structure for AI generation",
+    )
 
     def save(self, *args, **kwargs):
         if not self.service_type:

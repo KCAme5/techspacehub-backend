@@ -36,6 +36,7 @@ class OllamaWebsiteGenerator:
             "You are an expert AI web developer. "
             "Write highly modular, clean, and modern HTML, CSS (Tailwind), and JS. "
             "Return ONLY valid code. No markdown formatting, no explanations. "
+            "Use Tailwind CSS from https://cdn.tailwindcss.com in your HTML. "
             "Wrap everything in a single valid HTML file with embedded CSS/JS if applicable."
         )
 
@@ -92,7 +93,7 @@ class OllamaWebsiteGenerator:
         fast_options = self.options.copy()
         fast_options["num_predict"] = 2048  # Cap output length for speed
 
-        prompt = f"System: {self._build_system_prompt()}\nUser: Build a VERY simple, fast layout mockup using Tailwind for this brief: {brief}"
+        prompt = f"System: {self._build_system_prompt()}\n\nUser: Build a VERY simple, fast layout mockup using Tailwind (from https://cdn.tailwindcss.com) for this brief: {brief}"
 
         payload = {
             "model": self.model,

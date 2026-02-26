@@ -56,3 +56,42 @@ class CodeRevision(models.Model):
 
     def __str__(self):
         return f"v{self.version_number} - {self.order.id}"
+
+
+class ProjectFile(models.Model):
+    """Store individual files for multi-file website projects."""
+
+    FILE_TYPES = [
+        ("html", "HTML"),
+        ("css", "CSS"),
+        ("js", "JavaScript"),
+        ("jsx", "JSX/React"),
+        ("ts", "TypeScript"),
+        ("tsx", "TSX/React"),
+        ("json", "JSON"),
+        ("md", "Markdown"),
+        ("other", "Other"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.ForeignKey(
+        "WebsiteOrder", on_delete=models.CASCADE, related_name="project_files"
+    )
+    filename = models.CharField(max_length=255)  # e.g., "index.html", "styles.css"
+    file_type = models.CharField(max_length=10, choices=FILE_TYPES, default="html")
+    content = models.TextField()
+    is_entry_point = models.BooleanField(
+        default=False
+    )  # Main file (index.html or App.jsx)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_entry_point", "filename"]
+        unique_together = ["order", "filename"]
+        indexes = [
+            models.Index(fields=["order", "file_type"]),
+        ]
+
+    def __str__(self):
+        return (f"{self.filename} ({self.order.id})",)

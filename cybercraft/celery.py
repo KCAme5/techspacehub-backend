@@ -3,19 +3,22 @@ import os
 from celery import Celery
 
 # Set Django settings module
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'cybercraft.settings')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cybercraft.settings")
 
-app = Celery('cybercraft')
+app = Celery("cybercraft")
 
-app.autodiscover_tasks([
-    'services.websites.tasks',
-    'services.audits.tasks',
-])
+app.autodiscover_tasks(
+    [
+        "services.websites.tasks",
+        "services.websites.cleanup_tasks",
+        "services.audits.tasks",
+    ]
+)
 
 # Load config from Django settings with CELERY_ namespace
-app.config_from_object('django.conf:settings', namespace='CELERY')
+app.config_from_object("django.conf:settings", namespace="CELERY")
 
 
 @app.task(bind=True, ignore_result=True)
 def debug_task(self):
-    print(f'Request: {self.request!r}')
+    print(f"Request: {self.request!r}")

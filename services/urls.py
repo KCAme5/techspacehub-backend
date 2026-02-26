@@ -36,4 +36,16 @@ urlpatterns = [
         "websites/<uuid:pk>/chat/update-code/",
         WebsiteAIChatViewSet.as_view({"post": "update_code_directly"}),
     ),
+    path(
+        "websites/<uuid:pk>/chat/files/",
+        WebsiteAIChatViewSet.as_view({"get": "project_files"}),
+    ),
+    path(
+        "websites/<uuid:pk>/chat/save-file/",
+        WebsiteAIChatViewSet.as_view({"post": "save_project_file"}),
+    ),
+    path(
+        "websites/<uuid:pk>/chat/project-type/",
+        WebsiteAIChatViewSet.as_view({"post": "set_project_type"}),
+    ),
 ]

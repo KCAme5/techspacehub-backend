@@ -6,7 +6,7 @@ import logging
 import re
 
 from .models import WebsiteOrder
-from .models_conversation import ConversationMessage, CodeRevision
+from .models_conversation import ConversationMessage, CodeRevision, ProjectFile
 from .ai.conversation_client import ConversationalAIClient
 
 logger = logging.getLogger(__name__)
@@ -51,9 +51,47 @@ def process_revision_request(
             html_chunks.append(chunk)
             send_code_chunk(chunk)
 
-        # Clean up the output
+        # Clean up and parse the output
         raw_html = "".join(html_chunks)
-        clean_html = client.clean_code_output(raw_html)
+
+        # Try to parse as multi-file project
+        files = client.parse_multi_file_output(raw_html)
+
+        if len(files) > 1:
+            # Multi-file project detected
+            send_status(f"Saving {len(files)} files...")
+
+            # Clear old project files for this order
+            ProjectFile.objects.filter(order=order).delete()
+
+            # Save each file
+            for filename, content in files.items():
+                file_type = filename.split(".")[-1] if "." in filename else "other"
+                is_entry = filename in ["index.html", "App.jsx", "App.tsx"]
+
+                ProjectFile.objects.create(
+                    order=order,
+                    filename=filename,
+                    file_type=file_type,
+                    content=content,
+                    is_entry_point=is_entry,
+                )
+
+            # Merge for preview
+            clean_html = client.merge_files_to_html(files)
+        else:
+            # Single file (backward compatibility)
+            clean_html = client.clean_code_output(raw_html)
+            # Clear any old project files
+            ProjectFile.objects.filter(order=order).delete()
+            # Create a single project file entry
+            ProjectFile.objects.create(
+                order=order,
+                filename="index.html",
+                file_type="html",
+                content=clean_html,
+                is_entry_point=True,
+            )
 
         # Save revision before updating
         max_version = order.code_revisions.count() + 1
@@ -64,9 +102,22 @@ def process_revision_request(
             change_description=user_message,
         )
 
-        # Save new code
+        # Save new code (merged version for preview)
         file_path = f"ai_generated_projects/{order.id}/index.html"
         order.brief_files.save(file_path, ContentFile(clean_html.encode()))
+
+        # Also save as JSON manifest for multi-file info
+        import json
+
+        manifest = {
+            "files": list(files.keys()) if "files" in dir() else ["index.html"],
+            "entry_point": "index.html",
+            "revision_version": max_version,
+        }
+        manifest_path = f"ai_generated_projects/{order.id}/manifest.json"
+        order.brief_files.save(
+            manifest_path, ContentFile(json.dumps(manifest).encode())
+        )
 
         # Save AI response to conversation
         ai_response = f"I've updated the website based on your request: {user_message}"
