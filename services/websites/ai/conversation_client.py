@@ -64,8 +64,10 @@ class ConversationalAIClient:
             return (
                 "You are an expert AI web developer helping revise a website. "
                 "You will receive the current code and a user's request for changes. "
-                "Return the COMPLETE revised code with all changes applied. "
-                "Return ONLY valid code. No markdown formatting, no explanations. "
+                "CRITICAL INSTRUCTION: Return the COMPLETE, FULL revised code with ALL changes applied. "
+                "Do NOT return only the new parts or additions. "
+                "Return the ENTIRE file content as it should appear after the changes. "
+                "Return ONLY valid code. No markdown formatting, no explanations outside code blocks. "
                 "Use Tailwind CSS from https://cdn.tailwindcss.com. "
                 "If the project has multiple files, return a JSON object with all files."
             )
