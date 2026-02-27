@@ -4,8 +4,13 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class WebsiteGenerator:
-    def __init__(self, model="llama3", url="http://ollama-techspacehub:11434/api/generate"):
+    def __init__(
+        self,
+        model="qwen2.5-coder:14b",
+        url="http://ollama-techspacehub:11434/api/generate",
+    ):
         self.model = model
         self.url = url
 
@@ -14,17 +19,13 @@ class WebsiteGenerator:
         Sends prompt to Ollama and returns generated content.
         """
         logger.info(f"Calling Ollama with model {self.model}")
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False
-        }
-        
+        payload = {"model": self.model, "prompt": prompt, "stream": False}
+
         try:
             # Placeholder for actual Ollama call
             # response = requests.post(self.url, json=payload, timeout=60)
             # return response.json().get('response')
-            
+
             # Dummy response
             return "<html><body><h1>Generated Website</h1><p>Your AI website content goes here.</p></body></html>"
         except Exception as e:

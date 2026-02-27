@@ -16,7 +16,7 @@ class OllamaWebsiteGenerator:
     Optimized for 16GB RAM / CPU-only inference.
     """
 
-    def __init__(self, model="llama3.1:8b", host="http://localhost:11434"):
+    def __init__(self, model="qwen2.5-coder:14b", host="http://localhost:11434"):
         # Host can be overridden via OLLAMA_HOST environment variable
         # For Docker: use host.docker.internal:11434 or the Docker gateway IP (e.g., 10.0.1.1:11434)
         self.host = os.environ.get("OLLAMA_HOST", host)
