@@ -36,27 +36,19 @@ class OllamaWebsiteGenerator:
             "You are an expert AI React developer. "
             "Write highly modular, clean, and modern React code using functional components and hooks. "
             "CRITICAL: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. "
-            "Return ONLY a single valid HTML file that runs React via CDN. "
-            "Your response MUST follow this exact structure:\n"
-            "<!DOCTYPE html>\n"
-            "<html>\n"
-            "  <head>\n"
-            "    <script src=\"https://unpkg.com/react@18/umd/react.development.js\"></script>\n"
-            "    <script src=\"https://unpkg.com/react-dom@18/umd/react-dom.development.js\"></script>\n"
-            "    <script src=\"https://unpkg.com/@babel/standalone/babel.min.js\"></script>\n"
-            "    <script src=\"https://cdn.tailwindcss.com\"></script>\n"
-            "  </head>\n"
-            "  <body>\n"
-            "    <div id=\"root\"></div>\n"
-            "    <script type=\"text/babel\">\n"
-            "      const { useState, useEffect } = React;\n"
-            "      function App() { ... }\n"
-            "      const root = ReactDOM.createRoot(document.getElementById('root'));\n"
-            "      root.render(<App />);\n"
-            "    </script>\n"
-            "  </body>\n"
-            "</html>\n"
-            "Return ONLY the code. No explanations, no markdown blocks."
+            "Return a JSON object containing all necessary files for the project. "
+            "Structure your response as a single JSON object with filenames as keys and file contents as values.\n"
+            "Required files:\n"
+            "1. 'index.html': Must include React (v18), ReactDOM (v18), Babel, and Tailwind CDNs.\n"
+            "2. 'App.jsx': The main React component using functional syntax.\n"
+            "3. 'styles.css': Any custom CSS (optional).\n\n"
+            "Example JSON structure:\n"
+            "{\n"
+            "  \"index.html\": \"<!DOCTYPE html><html><head>...</head><body><div id='root'></div><script type='text/babel' src='./App.jsx'></script></body></html>\",\n"
+            "  \"App.jsx\": \"const { useState } = React; function App() { ... } ...\"\n"
+            "}\n\n"
+            "NOTE: For the preview to work, 'index.html' SHOULD reference other script files using <script type='text/babel' src='./Filename.jsx'></script> OR you can embed them if you prefer a single-file JSON entry.\n"
+            "Return ONLY the JSON. No explanations, no markdown blocks."
         )
 
     def generate_website(self, brief: str, template_id: str = None) -> str:
@@ -84,11 +76,15 @@ class OllamaWebsiteGenerator:
             response = requests.post(self.api_url, json=payload, timeout=300)
             response.raise_for_status()
 
-            # Clean up the response (remove Markdown blocks if the AI hallucinates them)
             raw_text = response.json().get("response", "")
-            # Clean up any markdown blocks (html, jsx, js, etc.)
+            
+            # Try to parse as multi-file JSON
+            files = self.parse_multi_file_output(raw_text)
+            if files and "index.html" in files:
+                return self.merge_files_to_html(files)
+            
+            # Fallback to legacy cleaning
             clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', raw_text, flags=re.IGNORECASE).strip()
-
             return clean_html
 
         except requests.exceptions.ReadTimeout:
@@ -189,14 +185,78 @@ class OllamaWebsiteGenerator:
             yield f"\n\n<!-- Error streaming AI response: {str(e)} -->"
 
     @staticmethod
-    def create_zip_archive(
-        html_content: str, filename: str = "website.zip"
-    ) -> io.BytesIO:
-        """
-        Utility function to package the generated HTML into a downloadable zip file.
-        """
+    def parse_multi_file_output(raw_text: str) -> dict:
+        """Parse AI output that contains multiple files in JSON format."""
+        try:
+            # Clean markdown wrappers first
+            cleaned = re.sub(r"^```json\s*|```$", "", raw_text.strip(), flags=re.MULTILINE | re.IGNORECASE)
+            data = json.loads(cleaned)
+            if isinstance(data, dict):
+                return {k: v for k, v in data.items() if isinstance(v, str)}
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return {}
+
+    @staticmethod
+    def merge_files_to_html(files: dict) -> str:
+        """Merge multiple React/JSX components into a single previewable HTML."""
+        html_content = files.get("index.html", "")
+        if not html_content:
+            html_content = "<!DOCTYPE html><html><head></head><body><div id='root'></div></body></html>"
+
+        # Ensure CDNs are present
+        cdns = [
+            "https://unpkg.com/react@18/umd/react.development.js",
+            "https://unpkg.com/react-dom@18/umd/react-dom.development.js",
+            "https://unpkg.com/@babel/standalone/babel.min.js",
+            "https://cdn.tailwindcss.com"
+        ]
+        head_tags = ""
+        for cdn in cdns:
+            if cdn not in html_content:
+                head_tags += f'<script src="{cdn}"></script>\n'
+        
+        if head_tags:
+            if "</head>" in html_content:
+                html_content = html_content.replace("</head>", f"{head_tags}</head>")
+            else:
+                html_content = html_content.replace("<body>", f"<head>{head_tags}</head><body>")
+
+        # Gather all JSX/JS content
+        js_content = ""
+        for filename, content in files.items():
+            if filename.endswith((".js", ".jsx")) and filename != "index.html":
+                js_content += f"\n/* --- {filename} --- */\n{content}\n"
+
+        if js_content:
+            # Inject as a Babel script
+            script_tag = f'<script type="text/babel">\n{js_content}\n</script>'
+            if "</body>" in html_content:
+                html_content = html_content.replace("</body>", f"{script_tag}</body>")
+            else:
+                html_content += script_tag
+
+        # Inject CSS
+        css_content = ""
+        for filename, content in files.items():
+            if filename.endswith(".css"):
+                css_content += f"\n/* {filename} */\n{content}\n"
+        
+        if css_content:
+            css_tag = f"<style>{css_content}</style>"
+            if "</head>" in html_content:
+                html_content = html_content.replace("</head>", f"{css_tag}</head>")
+            else:
+                html_content = html_content.replace("<body>", f"<head>{css_tag}</head><body>")
+
+        return html_content
+
+    @staticmethod
+    def create_zip_archive(files: dict, filename: str = "website.zip") -> io.BytesIO:
+        """Package multiple files into a downloadable zip file."""
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr("index.html", html_content)
+            for fname, content in files.items():
+                zf.writestr(fname, content)
         zip_buffer.seek(0)
         return zip_buffer

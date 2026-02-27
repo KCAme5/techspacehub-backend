@@ -22,6 +22,7 @@ class WebsiteOrder(ServiceOrder):
         default="single_file",
         help_text="Type of project structure for AI generation",
     )
+    generated_zip = models.FileField(upload_to="ai_generated_projects/zips/", null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.service_type:

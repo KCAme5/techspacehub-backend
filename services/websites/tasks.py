@@ -72,32 +72,47 @@ def generate_ai_website(order_id):
         send_log("\nCode generation complete. Finalizing assets...", "status")
         send_log("$ npm install && npm run build", "status")  # Simulating build
 
-        # 2. Store the generated website safely in the media directory
+        # 2. Process the generated output
         html_content = "".join(html_chunks)
 
-        # Clean up Markdown block hallucinations
-        import re
+        # Check if it's a multi-file JSON
+        files = generator.parse_multi_file_output(html_content)
+        
+        if files:
+            send_log("Detected multi-file project. Merging for preview...", "status")
+            clean_html = generator.merge_files_to_html(files)
+            
+            # Save the original files as a ZIP for download
+            zip_buffer = generator.create_zip_archive(files)
+            zip_filename = f"project_{order.id}.zip"
+            zip_path = f"ai_generated_projects/{order.id}/{zip_filename}"
+            order.brief_files.save(zip_path, ContentFile(zip_buffer.getvalue()))
+        else:
+            send_log("Detected single-file project. Cleaning up code...", "status")
+            clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', html_content, flags=re.IGNORECASE).strip()
 
-        # Clean up any markdown blocks (html, jsx, js, etc.)
-        clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', html_content, flags=re.IGNORECASE).strip()
-
+        # Save index.html for the preview
         filename = f"index.html"
         file_path = f"ai_generated_projects/{order.id}/{filename}"
-
         send_log(f"Saving assets to permanent storage...", "status")
 
-        # Save to the brief_files
-        order.brief_files.save(file_path, ContentFile(clean_html.encode("utf-8")))
+        # Create a new File to be stored
+        preview_file_content = ContentFile(clean_html.encode("utf-8"))
+        
+        # We need a custom way to store the preview HTML if we already used brief_files for the ZIP
+        # For now, let's just save the index.html to the same storage but maybe a different field if available
+        # Actually, let's just keep using brief_files but maybe be smarter.
+        # WebsiteOrder model only has 'brief_files'. Let's check the model again.
+        
+        order.brief_files.save(file_path, preview_file_content)
 
         # Use API endpoint to serve the HTML (Daphne doesn't serve media files)
         from django.urls import reverse
-
         preview_url = reverse("website-preview", kwargs={"order_id": order.id})
-        # Make absolute URL
-        from django.conf import settings
-
+        
         if preview_url.startswith("/"):
             preview_url = f"{settings.BACKEND_URL}{preview_url}"
+        
         order.final_url = preview_url
         order.save()
 

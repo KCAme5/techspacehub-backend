@@ -66,14 +66,17 @@ class ConversationalAIClient:
 
         elif mode == "revise":
             return (
-                "You are an expert AI web developer helping revise a website. "
-                "You will receive the current code and a user's request for changes. "
-                "CRITICAL INSTRUCTION: Return the COMPLETE, FULL revised code with ALL changes applied. "
-                "Do NOT return only the new parts or additions. "
-                "Return the ENTIRE file content as it should appear after the changes. "
-                "Return ONLY valid code. No markdown formatting, no explanations outside code blocks. "
-                "Use Tailwind CSS from https://cdn.tailwindcss.com. "
-                "If the project has multiple files, return a JSON object with all files."
+                "You are an expert AI React developer helping revise a website. "
+                "CRITICAL: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. "
+                "Return a JSON object containing ALL files for the project. "
+                "Return ONLY a JSON object with filenames as keys and file contents as values.\n"
+                "Example:\n"
+                "{\n"
+                "  \"index.html\": \"...\",\n"
+                "  \"App.jsx\": \"...\",\n"
+                "  \"styles.css\": \"...\"\n"
+                "}\n"
+                "Return ONLY the complete JSON. No markdown formatting, no explanations."
             )
 
     def generate_initial(
@@ -217,40 +220,53 @@ Based on the current code and the user's request, provide the COMPLETE revised H
 
     @staticmethod
     def merge_files_to_html(files: dict) -> str:
-        """
-        Merge multiple files (HTML, CSS, JS) into a single HTML file for preview.
-        This is used when the AI generates separate files but we need to preview as one.
-        """
+        """Merge multiple React/JSX components into a single previewable HTML."""
         html_content = files.get("index.html", "")
-
-        # If no HTML file, create one
         if not html_content:
-            html_content = "<!DOCTYPE html><html><head></head><body></body></html>"
+            html_content = "<!DOCTYPE html><html><head></head><body><div id='root'></div></body></html>"
 
-        # Inject CSS files into <head>
+        # Ensure CDNs are present
+        cdns = [
+            "https://unpkg.com/react@18/umd/react.development.js",
+            "https://unpkg.com/react-dom@18/umd/react-dom.development.js",
+            "https://unpkg.com/@babel/standalone/babel.min.js",
+            "https://cdn.tailwindcss.com"
+        ]
+        head_tags = ""
+        for cdn in cdns:
+            if cdn not in html_content:
+                head_tags += f'<script src="{cdn}"></script>\n'
+        
+        if head_tags:
+            if "</head>" in html_content:
+                html_content = html_content.replace("</head>", f"{head_tags}</head>")
+            else:
+                html_content = html_content.replace("<body>", f"<head>{head_tags}</head><body>")
+
+        # Gather all JSX/JS content
+        js_content = ""
+        for filename, content in files.items():
+            if filename.endswith((".js", ".jsx")) and filename != "index.html":
+                js_content += f"\n/* --- {filename} --- */\n{content}\n"
+
+        if js_content:
+            script_tag = f'<script type="text/babel">\n{js_content}\n</script>'
+            if "</body>" in html_content:
+                html_content = html_content.replace("</body>", f"{script_tag}</body>")
+            else:
+                html_content += script_tag
+
+        # Inject CSS
         css_content = ""
         for filename, content in files.items():
             if filename.endswith(".css"):
                 css_content += f"\n/* {filename} */\n{content}\n"
-
-        if css_content and "<style>" not in html_content:
+        
+        if css_content:
             css_tag = f"<style>{css_content}</style>"
             if "</head>" in html_content:
                 html_content = html_content.replace("</head>", f"{css_tag}</head>")
             else:
-                html_content = html_content.replace("</body>", f"{css_tag}</body>")
-
-        # Inject JS files before </body>
-        js_content = ""
-        for filename, content in files.items():
-            if filename.endswith(".js") and not filename.endswith(".jsx"):
-                js_content += f"\n/* {filename} */\n{content}\n"
-
-        if js_content:
-            js_tag = f"<script>{js_content}</script>"
-            if "</body>" in html_content:
-                html_content = html_content.replace("</body>", f"{js_tag}</body>")
-            else:
-                html_content += js_tag
+                html_content = html_content.replace("<body>", f"<head>{css_tag}</head><body>")
 
         return html_content
