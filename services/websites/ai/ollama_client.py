@@ -36,18 +36,17 @@ class OllamaWebsiteGenerator:
             "You are an expert AI React developer. "
             "Write highly modular, clean, and modern React code using functional components and hooks. "
             "CRITICAL RULES:\n"
-            "1. NO IMPORTS: Do NOT use `import ... from ...` or `export ...`. React is available in the global scope.\n"
-            "2. STATE & HOOKS: Use `React.useState`, `React.useEffect`, etc., OR destructure them at the top: `const { useState } = React;`.\n"
-            "3. RENDER METHOD: Use `const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);` at the end of your main file.\n"
-            "4. STYLING: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. The CDN is already included.\n"
-            "5. OUTPUT FORMAT: Return a JSON object containing all necessary files.\n\n"
-            "Required structure for JSON response:\n"
-            "{\n"
-            "  \"index.html\": \"<!DOCTYPE html>...\",\n"
-            "  \"App.jsx\": \"const App = () => { ... }; const root = ReactDOM.createRoot(...); root.render(<App />);\",\n"
-            "  \"styles.css\": \"/* Optional custom styles */\"\n"
-            "}\n"
-            "Return ONLY the JSON object. No explanations, no markdown blocks."
+            "1. NO IMPORTS: Do NOT use `import ... from ...` or `export ...`. React/ReactDOM are available globally.\n"
+            "2. STATE & HOOKS: Use `React.useState`, `React.useEffect`, etc. or destructure from `React`.\n"
+            "3. RENDER METHOD: Use `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`.\n"
+            "4. STYLING: Use Tailwind CSS ONLY. The CDN is already included. Do NOT add your own <link> for Tailwind.\n"
+            "5. OUTPUT FORMAT: Output your project as a series of files using this exact format for EACH file:\n\n"
+            "--- FILENAME.EXT ---\n"
+            "```language\n"
+            "content\n"
+            "```\n\n"
+            "Required files: index.html, App.jsx, styles.css (if needed).\n"
+            "Return ONLY the files. No explanations, no markdown intro."
         )
 
     def generate_website(self, brief: str, template_id: str = None) -> str:
@@ -185,16 +184,52 @@ class OllamaWebsiteGenerator:
 
     @staticmethod
     def parse_multi_file_output(raw_text: str) -> dict:
-        """Parse AI output that contains multiple files in JSON format."""
+        """
+        Parse AI output that contains multiple files.
+        Supports both JSON format and '--- filename ---' format.
+        """
+        import re
+        import json
+
+        # 1. Try JSON parsing
         try:
-            # Clean markdown wrappers first
-            cleaned = re.sub(r"^```json\s*|```$", "", raw_text.strip(), flags=re.MULTILINE | re.IGNORECASE)
-            data = json.loads(cleaned)
-            if isinstance(data, dict):
-                return {k: v for k, v in data.items() if isinstance(v, str)}
+            # Extract JSON block using regex if possible
+            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+            if json_match:
+                cleaned = json_match.group(1)
+                data = json.loads(cleaned)
+                if isinstance(data, dict):
+                    files = {k: v for k, v in data.items() if isinstance(v, str) and "." in k}
+                    if files:
+                        return files
         except (json.JSONDecodeError, ValueError):
             pass
-        return {}
+
+        # 2. Try '--- filename ---' pattern
+        files = {}
+        # Pattern like: --- filename.ext --- \n ```language \n content \n ```
+        sections = re.split(r'---+\s*([\w\./\-\\]+)\s*---+', raw_text)
+        if len(sections) > 1:
+            for i in range(1, len(sections), 2):
+                filename = sections[i].strip()
+                content = sections[i+1].strip()
+                # Remove markdown code block wrappers
+                content = re.sub(r'^```[\w]*\n?', '', content)
+                content = re.sub(r'```$', '', content)
+                files[filename] = content.strip()
+            
+            if files:
+                return files
+
+        # 3. Fallback: Extract from any markdown code blocks with labels
+        pattern = r"```([^\n]+)\n(.*?)```"
+        matches = re.findall(pattern, raw_text, re.DOTALL)
+        for filename, content in matches:
+            filename = filename.strip()
+            if "." in filename:
+                files[filename] = content.strip()
+
+        return files
 
     @staticmethod
     def merge_files_to_html(files: dict) -> str:
@@ -226,8 +261,18 @@ class OllamaWebsiteGenerator:
         for filename, content in files.items():
             if filename.endswith((".js", ".jsx")) and filename != "index.html":
                 # Failsafe: Strip imports and exports that break CDN/Babel preview
-                content = re.sub(r"^\s*import\s+.*?;?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
                 content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
+                
+                # Failsafe: Convert old ReactDOM.render to createRoot
+                if "ReactDOM.render" in content and "createRoot" not in content:
+                    content = re.sub(
+                        r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?",
+                        r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);",
+                        content
+                    )
+                
                 js_content += f"\n/* --- {filename} --- */\n{content}\n"
 
         if js_content:

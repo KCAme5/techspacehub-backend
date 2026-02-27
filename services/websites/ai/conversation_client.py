@@ -58,26 +58,27 @@ class ConversationalAIClient:
                 return (
                     "You are an expert AI React developer. "
                     "Write modular React code using functional components. "
-                    "Use Tailwind CSS for ALL styling. "
-                    "CRITICAL: NO IMPORTS (`import ... from ...`). React/ReactDOM are global. "
-                    "Return a JSON object of files (index.html, App.jsx, styles.css). "
-                    "Use `ReactDOM.createRoot` for rendering. "
-                    "Return ONLY the JSON object. No markdown, no explanations."
+                    "Use Tailwind CSS for ALL styling. CRITICAL: NO IMPORTS (`import ... from ...`). React/ReactDOM/Tailwind are global. "
+                    "Output your project as separate files. Use this format for EACH file:\n\n"
+                    "--- FILENAME.EXT ---\n"
+                    "```language\n"
+                    "content\n"
+                    "```\n\n"
+                    "Required files: index.html, App.jsx, styles.css. "
+                    "In App.jsx, use `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`. "
+                    "Return ONLY the files. No explanations."
                 )
 
         elif mode == "revise":
             return (
                 "You are an expert AI React developer helping revise a website. "
-                "CRITICAL: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. "
-                "Return a JSON object containing ALL files for the project. "
-                "Return ONLY a JSON object with filenames as keys and file contents as values.\n"
-                "Example:\n"
-                "{\n"
-                "  \"index.html\": \"...\",\n"
-                "  \"App.jsx\": \"...\",\n"
-                "  \"styles.css\": \"...\"\n"
-                "}\n"
-                "Return ONLY the complete JSON. No markdown formatting, no explanations."
+                "CRITICAL: Use Tailwind CSS for ALL styling. NO IMPORTS. "
+                "Output ALL files for the project using this format:\n\n"
+                "--- FILENAME.EXT ---\n"
+                "```language\n"
+                "content\n"
+                "```\n"
+                "Return ONLY the files. No explanations."
             )
 
     def generate_initial(
@@ -186,32 +187,54 @@ Based on the current code and the user's request, provide the COMPLETE revised H
         import json
 
         # First, try to parse as JSON
+    @staticmethod
+    def parse_multi_file_output(raw_text: str) -> dict:
+        """
+        Parse AI output that contains multiple files.
+        Supports both JSON format and '--- filename ---' format.
+        """
+        import re
+        import json
+
+        # 1. Try JSON parsing
         try:
-            # Clean markdown wrappers first
-            cleaned = re.sub(
-                r"^```json\s*|```$", "", raw_text.strip(), flags=re.MULTILINE
-            )
-            data = json.loads(cleaned)
-            if isinstance(data, dict):
-                # Filter out non-string values and non-file keys
-                files = {
-                    k: v for k, v in data.items() if isinstance(v, str) and "." in k
-                }
-                if files:
-                    return files
+            # Extract JSON block using regex if possible
+            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+            if json_match:
+                cleaned = json_match.group(1)
+                data = json.loads(cleaned)
+                if isinstance(data, dict):
+                    files = {k: v for k, v in data.items() if isinstance(v, str) and "." in k}
+                    if files:
+                        return files
         except (json.JSONDecodeError, ValueError):
             pass
 
-        # Fallback: Extract from markdown code blocks with filenames
+        # 2. Try '--- filename ---' pattern
         files = {}
-        # Pattern: ```filename.ext\ncontent\n```
+        # Pattern like: --- filename.ext --- \n ```language \n content \n ```
+        sections = re.split(r'---+\s*([\w\./\-\\]+)\s*---+', raw_text)
+        if len(sections) > 1:
+            for i in range(1, len(sections), 2):
+                filename = sections[i].strip()
+                content = sections[i+1].strip()
+                # Remove markdown code block wrappers
+                content = re.sub(r'^```[\w]*\n?', '', content)
+                content = re.sub(r'```$', '', content)
+                files[filename] = content.strip()
+            
+            if files:
+                return files
+
+        # 3. Fallback: Extract from any markdown code blocks with hints in labels
         pattern = r"```([^\n]+)\n(.*?)```"
         matches = re.findall(pattern, raw_text, re.DOTALL)
-
         for filename, content in matches:
             filename = filename.strip()
-            if "." in filename and not filename.startswith("//"):
+            if "." in filename:
                 files[filename] = content.strip()
+
+        return files
 
         # If no files found, treat entire output as single index.html
         if not files and raw_text.strip():
@@ -249,8 +272,18 @@ Based on the current code and the user's request, provide the COMPLETE revised H
         for filename, content in files.items():
             if filename.endswith((".js", ".jsx")) and filename != "index.html":
                 # Failsafe: Strip imports and exports that break CDN/Babel preview
-                content = re.sub(r"^\s*import\s+.*?;?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
                 content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
+                
+                # Failsafe: Convert old ReactDOM.render to createRoot
+                if "ReactDOM.render" in content and "createRoot" not in content:
+                    content = re.sub(
+                        r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?",
+                        r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);",
+                        content
+                    )
+                
                 js_content += f"\n/* --- {filename} --- */\n{content}\n"
 
         if js_content:
