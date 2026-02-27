@@ -38,47 +38,30 @@ class ConversationalAIClient:
         )
 
         if mode == "generate":
-            if project_type == "react":
-                return (
-                    base_prompt + "Generate a React project with JSX files. "
-                    "Use functional components with hooks. "
-                    "Use Tailwind CSS from https://cdn.tailwindcss.com. "
-                    "Return a JSON object with filenames as keys and file contents as values. "
-                    'Example: {"index.html": "...", "App.jsx": "...", "styles.css": "..."}'
-                )
-            elif project_type == "multi_file":
-                return (
-                    base_prompt + "Generate separate HTML, CSS, and JS files. "
-                    "Link them correctly: CSS in <head>, JS before </body>. "
-                    "Use Tailwind CSS from https://cdn.tailwindcss.com. "
-                    "Return a JSON object with filenames as keys and file contents as values. "
-                    'Example: {"index.html": "...", "styles.css": "...", "script.js": "..."}'
-                )
-            else:  # single_file or auto
-                return (
-                    "You are an expert AI React developer. "
-                    "Write modular React code using functional components. "
-                    "Use Tailwind CSS for ALL styling. CRITICAL: NO IMPORTS (`import ... from ...`). React/ReactDOM/Tailwind are global. "
-                    "Output your project as separate files. Use this format for EACH file:\n\n"
-                    "--- FILENAME.EXT ---\n"
-                    "```language\n"
-                    "content\n"
-                    "```\n\n"
-                    "Required files: index.html, App.jsx, styles.css. "
-                    "In App.jsx, use `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`. "
-                    "Return ONLY the files. No explanations."
-                )
+            return (
+                "You are an expert AI React developer. "
+                "Write modular React code using functional components. "
+                "Use Tailwind CSS for ALL styling. CRITICAL: NO IMPORTS (`import ... from ...`). React/ReactDOM/Tailwind are global. "
+                "Output your project as separate files. Use this format for EACH file:\n\n"
+                "--- FILENAME.EXT ---\n"
+                "```language\n"
+                "content\n"
+                "```\n\n"
+                "Required files: index.html, App.jsx, styles.css. "
+                "In App.jsx, use `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`. "
+                "Return ONLY the files. No explanations or intro text."
+            )
 
         elif mode == "revise":
             return (
                 "You are an expert AI React developer helping revise a website. "
                 "CRITICAL: Use Tailwind CSS for ALL styling. NO IMPORTS. "
-                "Output ALL files for the project using this format:\n\n"
+                "Output your revisions as separate files using the marker format:\n\n"
                 "--- FILENAME.EXT ---\n"
                 "```language\n"
                 "content\n"
-                "```\n"
-                "Return ONLY the files. No explanations."
+                "```\n\n"
+                "Update only the files that need changes. Return ONLY the files."
             )
 
     def generate_initial(
