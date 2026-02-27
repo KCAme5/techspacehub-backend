@@ -58,10 +58,11 @@ class ConversationalAIClient:
                 return (
                     "You are an expert AI React developer. "
                     "Write modular React code using functional components. "
-                    "Use Tailwind CSS via https://cdn.tailwindcss.com for ALL styling. "
-                    "Return a single valid HTML file with React/Babel/Tailwind CDNs. "
-                    "Target a <div id='root'></div> and use ReactDOM.createRoot. "
-                    "Return ONLY the complete HTML code. No markdown, no explanations."
+                    "Use Tailwind CSS for ALL styling. "
+                    "CRITICAL: NO IMPORTS (`import ... from ...`). React/ReactDOM are global. "
+                    "Return a JSON object of files (index.html, App.jsx, styles.css). "
+                    "Use `ReactDOM.createRoot` for rendering. "
+                    "Return ONLY the JSON object. No markdown, no explanations."
                 )
 
         elif mode == "revise":
@@ -247,6 +248,9 @@ Based on the current code and the user's request, provide the COMPLETE revised H
         js_content = ""
         for filename, content in files.items():
             if filename.endswith((".js", ".jsx")) and filename != "index.html":
+                # Failsafe: Strip imports and exports that break CDN/Babel preview
+                content = re.sub(r"^\s*import\s+.*?;?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
                 js_content += f"\n/* --- {filename} --- */\n{content}\n"
 
         if js_content:

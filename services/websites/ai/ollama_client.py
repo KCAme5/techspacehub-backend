@@ -35,20 +35,19 @@ class OllamaWebsiteGenerator:
         return (
             "You are an expert AI React developer. "
             "Write highly modular, clean, and modern React code using functional components and hooks. "
-            "CRITICAL: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. "
-            "Return a JSON object containing all necessary files for the project. "
-            "Structure your response as a single JSON object with filenames as keys and file contents as values.\n"
-            "Required files:\n"
-            "1. 'index.html': Must include React (v18), ReactDOM (v18), Babel, and Tailwind CDNs.\n"
-            "2. 'App.jsx': The main React component using functional syntax.\n"
-            "3. 'styles.css': Any custom CSS (optional).\n\n"
-            "Example JSON structure:\n"
+            "CRITICAL RULES:\n"
+            "1. NO IMPORTS: Do NOT use `import ... from ...` or `export ...`. React is available in the global scope.\n"
+            "2. STATE & HOOKS: Use `React.useState`, `React.useEffect`, etc., OR destructure them at the top: `const { useState } = React;`.\n"
+            "3. RENDER METHOD: Use `const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<App />);` at the end of your main file.\n"
+            "4. STYLING: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. The CDN is already included.\n"
+            "5. OUTPUT FORMAT: Return a JSON object containing all necessary files.\n\n"
+            "Required structure for JSON response:\n"
             "{\n"
-            "  \"index.html\": \"<!DOCTYPE html><html><head>...</head><body><div id='root'></div><script type='text/babel' src='./App.jsx'></script></body></html>\",\n"
-            "  \"App.jsx\": \"const { useState } = React; function App() { ... } ...\"\n"
-            "}\n\n"
-            "NOTE: For the preview to work, 'index.html' SHOULD reference other script files using <script type='text/babel' src='./Filename.jsx'></script> OR you can embed them if you prefer a single-file JSON entry.\n"
-            "Return ONLY the JSON. No explanations, no markdown blocks."
+            "  \"index.html\": \"<!DOCTYPE html>...\",\n"
+            "  \"App.jsx\": \"const App = () => { ... }; const root = ReactDOM.createRoot(...); root.render(<App />);\",\n"
+            "  \"styles.css\": \"/* Optional custom styles */\"\n"
+            "}\n"
+            "Return ONLY the JSON object. No explanations, no markdown blocks."
         )
 
     def generate_website(self, brief: str, template_id: str = None) -> str:
@@ -226,6 +225,9 @@ class OllamaWebsiteGenerator:
         js_content = ""
         for filename, content in files.items():
             if filename.endswith((".js", ".jsx")) and filename != "index.html":
+                # Failsafe: Strip imports and exports that break CDN/Babel preview
+                content = re.sub(r"^\s*import\s+.*?;?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
                 js_content += f"\n/* --- {filename} --- */\n{content}\n"
 
         if js_content:

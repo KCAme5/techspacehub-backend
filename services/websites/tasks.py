@@ -85,8 +85,8 @@ def generate_ai_website(order_id):
             # Save the original files as a ZIP for download
             zip_buffer = generator.create_zip_archive(files)
             zip_filename = f"project_{order.id}.zip"
-            zip_path = f"ai_generated_projects/{order.id}/{zip_filename}"
-            order.brief_files.save(zip_path, ContentFile(zip_buffer.getvalue()))
+            zip_path = f"ai_generated_projects/zips/{zip_filename}"
+            order.generated_zip.save(zip_path, ContentFile(zip_buffer.getvalue()))
         else:
             send_log("Detected single-file project. Cleaning up code...", "status")
             clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', html_content, flags=re.IGNORECASE).strip()
@@ -96,15 +96,8 @@ def generate_ai_website(order_id):
         file_path = f"ai_generated_projects/{order.id}/{filename}"
         send_log(f"Saving assets to permanent storage...", "status")
 
-        # Create a new File to be stored
-        preview_file_content = ContentFile(clean_html.encode("utf-8"))
-        
-        # We need a custom way to store the preview HTML if we already used brief_files for the ZIP
-        # For now, let's just save the index.html to the same storage but maybe a different field if available
-        # Actually, let's just keep using brief_files but maybe be smarter.
-        # WebsiteOrder model only has 'brief_files'. Let's check the model again.
-        
-        order.brief_files.save(file_path, preview_file_content)
+        # Save the preview HTML to brief_files (which views_serve.py uses)
+        order.brief_files.save(file_path, ContentFile(clean_html.encode("utf-8")))
 
         # Use API endpoint to serve the HTML (Daphne doesn't serve media files)
         from django.urls import reverse

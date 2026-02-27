@@ -18,5 +18,5 @@ class WebsiteOrderProgressSerializer(serializers.ModelSerializer, BaseServiceOrd
     
     class Meta:
         model = WebsiteOrder
-        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'revision_count', 'final_url', 'brief_files', 'revisions']
+        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'revision_count', 'final_url', 'brief_files', 'generated_zip', 'revisions']
         read_only_fields = BaseServiceOrderSerializer.Meta.read_only_fields
