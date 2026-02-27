@@ -16,7 +16,7 @@ class OllamaWebsiteGenerator:
     Optimized for 16GB RAM / CPU-only inference.
     """
 
-    def __init__(self, model="qwen2.5-coder:14b", host="http://localhost:11434"):
+    def __init__(self, model="llama3.1:8b", host="http://localhost:11434"):
         # Host can be overridden via OLLAMA_HOST environment variable
         # For Docker: use host.docker.internal:11434 or the Docker gateway IP (e.g., 10.0.1.1:11434)
         self.host = os.environ.get("OLLAMA_HOST", host)
@@ -193,7 +193,6 @@ class OllamaWebsiteGenerator:
 
         # 1. Try JSON parsing
         try:
-            # Extract JSON block using regex if possible
             json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
             if json_match:
                 cleaned = json_match.group(1)
@@ -213,9 +212,15 @@ class OllamaWebsiteGenerator:
             for i in range(1, len(sections), 2):
                 filename = sections[i].strip()
                 content = sections[i+1].strip()
-                # Remove markdown code block wrappers
-                content = re.sub(r'^```[\w]*\n?', '', content)
-                content = re.sub(r'```$', '', content)
+                
+                # Aggressively remove multiple layers of markdown code block wrappers
+                while content.startswith('```') or content.endswith('```'):
+                    content = re.sub(r'^```[\w]*\n?', '', content)
+                    content = re.sub(r'```$', '', content).strip()
+                
+                # Remove common header annotations the AI might add
+                content = re.sub(r'^(?://|#)\s*(?:javascript|jsx|css|html)\n?', '', content, flags=re.IGNORECASE)
+                
                 files[filename] = content.strip()
             
             if files:
@@ -235,45 +240,59 @@ class OllamaWebsiteGenerator:
     def merge_files_to_html(files: dict) -> str:
         """Merge multiple React/JSX components into a single previewable HTML."""
         html_content = files.get("index.html", "")
-        if not html_content:
+        
+        # Ensure we have a valid HTML structure with a root div
+        if not html_content or "<div id='root'" not in html_content and '<div id="root"' not in html_content:
             html_content = "<!DOCTYPE html><html><head></head><body><div id='root'></div></body></html>"
 
-        # Ensure CDNs are present
+        # Explicitly ensure Babel and React CDNs are present
         cdns = [
             "https://unpkg.com/react@18/umd/react.development.js",
             "https://unpkg.com/react-dom@18/umd/react-dom.development.js",
             "https://unpkg.com/@babel/standalone/babel.min.js",
             "https://cdn.tailwindcss.com"
         ]
+        
         head_tags = ""
         for cdn in cdns:
             if cdn not in html_content:
-                head_tags += f'<script src="{cdn}"></script>\n'
+                head_tags += f'    <script src="{cdn}"></script>\n'
         
         if head_tags:
             if "</head>" in html_content:
                 html_content = html_content.replace("</head>", f"{head_tags}</head>")
+            elif "<body>" in html_content:
+                html_content = html_content.replace("<body>", f"<head>\n{head_tags}</head><body>")
             else:
-                html_content = html_content.replace("<body>", f"<head>{head_tags}</head><body>")
+                html_content = f"<html><head>\n{head_tags}</head><body>{html_content}</body></html>"
 
         # Gather all JSX/JS content
         js_content = ""
-        for filename, content in files.items():
-            if filename.endswith((".js", ".jsx")) and filename != "index.html":
-                # Failsafe: Strip imports and exports that break CDN/Babel preview
-                content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
-                content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
-                content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
-                
-                # Failsafe: Convert old ReactDOM.render to createRoot
-                if "ReactDOM.render" in content and "createRoot" not in content:
-                    content = re.sub(
-                        r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?",
-                        r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);",
-                        content
-                    )
-                
-                js_content += f"\n/* --- {filename} --- */\n{content}\n"
+        # Prioritize App.jsx/App.js if it exists, then others
+        entry_candidates = ["App.jsx", "App.js", "main.jsx", "main.js"]
+        other_files = []
+        for filename in files:
+            if filename in entry_candidates:
+                other_files.insert(0, filename)
+            elif filename.endswith((".js", ".jsx")) and filename != "index.html":
+                other_files.append(filename)
+
+        for filename in other_files:
+            content = files[filename]
+            # Failsafe: Strip imports and exports that break CDN/Babel preview
+            content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
+            
+            # Failsafe: Convert old ReactDOM.render to createRoot
+            if "ReactDOM.render" in content and "createRoot" not in content:
+                content = re.sub(
+                    r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?",
+                    r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);",
+                    content
+                )
+            
+            js_content += f"\n/* --- {filename} --- */\n{content}\n"
 
         if js_content:
             # Inject as a Babel script
