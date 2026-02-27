@@ -56,8 +56,12 @@ class ConversationalAIClient:
                 )
             else:  # single_file or auto
                 return (
-                    base_prompt + "Use Tailwind CSS from https://cdn.tailwindcss.com. "
-                    "Wrap everything in a single valid HTML file with embedded CSS/JS if applicable."
+                    "You are an expert AI React developer. "
+                    "Write modular React code using functional components. "
+                    "Use Tailwind CSS via https://cdn.tailwindcss.com for ALL styling. "
+                    "Return a single valid HTML file with React/Babel/Tailwind CDNs. "
+                    "Target a <div id='root'></div> and use ReactDOM.createRoot. "
+                    "Return ONLY the complete HTML code. No markdown, no explanations."
                 )
 
         elif mode == "revise":
@@ -159,8 +163,8 @@ Based on the current code and the user's request, provide the COMPLETE revised H
         """Clean up AI output - remove markdown code blocks."""
         import re
 
-        # Remove markdown code blocks
-        clean = re.sub(r"```html\n|```|```html|```json\n|```json", "", raw_text).strip()
+        # Remove markdown code blocks (html, jsx, js, json, etc.)
+        clean = re.sub(r'```(?:html|jsx|javascript|js|json)?\n?|```', '', raw_text, flags=re.IGNORECASE).strip()
         return clean
 
     @staticmethod

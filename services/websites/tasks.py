@@ -78,7 +78,8 @@ def generate_ai_website(order_id):
         # Clean up Markdown block hallucinations
         import re
 
-        clean_html = re.sub(r"```html\n|```", "", html_content).strip()
+        # Clean up any markdown blocks (html, jsx, js, etc.)
+        clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', html_content, flags=re.IGNORECASE).strip()
 
         filename = f"index.html"
         file_path = f"ai_generated_projects/{order.id}/{filename}"

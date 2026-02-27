@@ -33,11 +33,30 @@ class OllamaWebsiteGenerator:
 
     def _build_system_prompt(self):
         return (
-            "You are an expert AI web developer. "
-            "Write highly modular, clean, and modern HTML, CSS (Tailwind), and JS. "
-            "Return ONLY valid code. No markdown formatting, no explanations. "
-            "Use Tailwind CSS from https://cdn.tailwindcss.com in your HTML. "
-            "Wrap everything in a single valid HTML file with embedded CSS/JS if applicable."
+            "You are an expert AI React developer. "
+            "Write highly modular, clean, and modern React code using functional components and hooks. "
+            "CRITICAL: Use Tailwind CSS for ALL styling. Use only official Tailwind utility classes. "
+            "Return ONLY a single valid HTML file that runs React via CDN. "
+            "Your response MUST follow this exact structure:\n"
+            "<!DOCTYPE html>\n"
+            "<html>\n"
+            "  <head>\n"
+            "    <script src=\"https://unpkg.com/react@18/umd/react.development.js\"></script>\n"
+            "    <script src=\"https://unpkg.com/react-dom@18/umd/react-dom.development.js\"></script>\n"
+            "    <script src=\"https://unpkg.com/@babel/standalone/babel.min.js\"></script>\n"
+            "    <script src=\"https://cdn.tailwindcss.com\"></script>\n"
+            "  </head>\n"
+            "  <body>\n"
+            "    <div id=\"root\"></div>\n"
+            "    <script type=\"text/babel\">\n"
+            "      const { useState, useEffect } = React;\n"
+            "      function App() { ... }\n"
+            "      const root = ReactDOM.createRoot(document.getElementById('root'));\n"
+            "      root.render(<App />);\n"
+            "    </script>\n"
+            "  </body>\n"
+            "</html>\n"
+            "Return ONLY the code. No explanations, no markdown blocks."
         )
 
     def generate_website(self, brief: str, template_id: str = None) -> str:
@@ -67,7 +86,8 @@ class OllamaWebsiteGenerator:
 
             # Clean up the response (remove Markdown blocks if the AI hallucinates them)
             raw_text = response.json().get("response", "")
-            clean_html = re.sub(r"```html\n|```", "", raw_text).strip()
+            # Clean up any markdown blocks (html, jsx, js, etc.)
+            clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', raw_text, flags=re.IGNORECASE).strip()
 
             return clean_html
 
