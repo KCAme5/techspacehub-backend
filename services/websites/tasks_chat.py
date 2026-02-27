@@ -106,19 +106,6 @@ def process_revision_request(
         file_path = f"ai_generated_projects/{order.id}/index.html"
         order.brief_files.save(file_path, ContentFile(clean_html.encode()))
 
-        # Also save as JSON manifest for multi-file info
-        import json
-
-        manifest = {
-            "files": list(files.keys()) if "files" in dir() else ["index.html"],
-            "entry_point": "index.html",
-            "revision_version": max_version,
-        }
-        manifest_path = f"ai_generated_projects/{order.id}/manifest.json"
-        order.brief_files.save(
-            manifest_path, ContentFile(json.dumps(manifest).encode())
-        )
-
         # Save AI response to conversation
         ai_response = f"I've updated the website based on your request: {user_message}"
         ConversationMessage.objects.create(
