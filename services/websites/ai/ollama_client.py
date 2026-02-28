@@ -210,36 +210,38 @@ class OllamaWebsiteGenerator:
 
         files = {}
 
-        # 1. Try '--- filename ---' or '**filename**' or '### filename'
-        # This regex is more lenient to handle common AI formatting variations
-        # We look for something that looks like a filename between separators
-        # Handle cases like: **index.html** or --- index.html --- or ### index.html
-        sections = re.split(r'(?:---+\s*|(?:\*\*)|(?:###)\s*)([\w\./\-\\]+)(?:\s*---+|(?:\*\*)|(?:\n))', raw_text)
+        # 1. Try improved splitting regex
+        # This one handles: 
+        # --- filename.ext ---
+        # **filename.ext**
+        # ### filename.ext
+        # File: filename.ext
+        # **File: filename.ext**
+        # It's much more liberal with what it considers a "marker"
+        
+        # We split by any header-like line that contains a filename
+        marker_pattern = r'(?:\n|^)(?:---+\s*|(?:\*\*)|(?:###)\s*|File:\s*)([\w\./\-\\]+)(?:\s*---+|(?:\*\*)|(?::?\s*\n))'
+        sections = re.split(marker_pattern, raw_text)
         
         if len(sections) > 1:
             for i in range(1, len(sections), 2):
                 filename = sections[i].strip().lower()
                 content = sections[i+1].strip()
                 
-                # Filter out garbage filenames or conversational leftovers
+                # Cleanup common "File: " prefixes if they were part of the match
+                filename = re.sub(r'^file:\s*', '', filename)
+                
                 if "." not in filename or len(filename) > 50 or " " in filename:
-                    # Special check: maybe the AI said "Here is App.jsx" instead of a marker
                     continue
 
-                # Aggressively remove multiple layers of markdown code block wrappers
-                # Handle cases where AI might put multiple blocks under one file
+                # Aggressively remove markdown wrappers
+                # Some AI models put the content in multiple blocks or add weird tags
                 while content.startswith('```') or '```' in content[:100]:
                     content = re.sub(r'^.*?```[\w]*\n?', '', content, count=1, flags=re.DOTALL)
                     content = re.sub(r'```$', '', content.strip()).strip()
                 
-                # Cleanup internal markdown artifacts
                 content = re.sub(r'```$', '', content).strip()
-                
-                # Remove common header annotations the AI might add
                 content = re.sub(r'^(?://|#)\s*(?:javascript|jsx|css|html)\n?', '', content, flags=re.IGNORECASE)
-                
-                # If content contains ANOTHER marker, we might have over-consumed if the split failed
-                # But re.split usually handles this well.
                 
                 files[filename] = content.strip()
             

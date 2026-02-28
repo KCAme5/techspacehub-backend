@@ -2,14 +2,11 @@ from celery import shared_task
 from django.core.files.base import ContentFile
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-import os
-from .models import WebsiteOrder
-from .ai.ollama_client import OllamaWebsiteGenerator
-from services.common.services import BaseServiceLogic
-import logging
-import re
 from django.conf import settings
 from django.urls import reverse
+import logging
+import re
+import os
 
 logger = logging.getLogger(__name__)
 

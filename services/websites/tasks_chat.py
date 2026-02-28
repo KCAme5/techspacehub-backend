@@ -112,13 +112,9 @@ def process_revision_request(
             order=order, role="assistant", content=ai_response, code_context=clean_html
         )
 
-        # Send completion
-        from django.conf import settings
-        from django.urls import reverse
-
-        preview_url = reverse("website-preview", kwargs={"order_id": order.id})
         if preview_url.startswith("/"):
-            preview_url = f"{settings.BACKEND_URL}{preview_url}"
+            if hasattr(settings, 'BACKEND_URL') and settings.BACKEND_URL:
+                preview_url = f"{settings.BACKEND_URL.rstrip('/')}{preview_url}"
 
         async_to_sync(channel_layer.group_send)(
             room_group_name,
