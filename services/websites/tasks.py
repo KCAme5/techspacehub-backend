@@ -7,6 +7,9 @@ from .models import WebsiteOrder
 from .ai.ollama_client import OllamaWebsiteGenerator
 from services.common.services import BaseServiceLogic
 import logging
+import re
+from django.conf import settings
+from django.urls import reverse
 
 logger = logging.getLogger(__name__)
 
@@ -99,12 +102,13 @@ def generate_ai_website(order_id):
         # Save the preview HTML to brief_files (which views_serve.py uses)
         order.brief_files.save(file_path, ContentFile(clean_html.encode("utf-8")))
 
-        # Use API endpoint to serve the HTML (Daphne doesn't serve media files)
-        from django.urls import reverse
+        # Use API endpoint to serve the HTML
         preview_url = reverse("website-preview", kwargs={"order_id": order.id})
         
-        if preview_url.startswith("/"):
-            preview_url = f"{settings.BACKEND_URL}{preview_url}"
+        # Ensure we use an absolute URL if needed, or just let the frontend handle the relative path
+        if hasattr(settings, 'BACKEND_URL') and settings.BACKEND_URL:
+            if preview_url.startswith("/"):
+                preview_url = f"{settings.BACKEND_URL.rstrip('/')}{preview_url}"
         
         order.final_url = preview_url
         order.save()
@@ -136,7 +140,7 @@ def generate_ai_website(order_id):
         try:
             order = WebsiteOrder.objects.get(id=order_id)
             BaseServiceLogic.update_status(
-                order, "in_progress", comment=f"AI Generation Failed: {str(e)}"
+                order, "failed", comment=f"AI Generation Failed: {str(e)}"
             )
 
             # Notify UI of failure

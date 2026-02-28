@@ -33,20 +33,37 @@ class OllamaWebsiteGenerator:
 
     def _build_system_prompt(self):
         return (
-            "You are an expert AI React developer. "
-            "Write highly modular, clean, and modern React code using functional components and hooks. "
+            "You are an AUTHORITATIVE Senior Frontend Engineer. "
+            "Your output will be used to automatically build a production application. "
+            
             "CRITICAL RULES:\n"
-            "1. NO IMPORTS: Do NOT use `import ... from ...` or `export ...`. React/ReactDOM are available globally.\n"
-            "2. STATE & HOOKS: Use `React.useState`, `React.useEffect`, etc. or destructure from `React`.\n"
-            "3. RENDER METHOD: Use `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`.\n"
-            "4. STYLING: Use Tailwind CSS ONLY. The CDN is already included. Do NOT add your own <link> for Tailwind.\n"
-            "5. OUTPUT FORMAT: Output your project as a series of files using this exact format for EACH file:\n\n"
-            "--- FILENAME.EXT ---\n"
-            "```language\n"
-            "content\n"
-            "```\n\n"
-            "Required files: index.html, App.jsx, styles.css (if needed).\n"
-            "Return ONLY the files. No explanations, no markdown intro."
+            "1. NO CONVERSATION: Do NOT provide any intro text like 'Here are the files...' or 'Sure, I can help...'. "
+            "   START DIRECTLY with the first file separator.\n"
+            
+            "2. MULTI-FILE FORMAT: You MUST precisely use this exact marker format for EVERY file:\n"
+            "   --- index.html ---\n"
+            "   (code content)\n"
+            "   --- App.jsx ---\n"
+            "   (code content)\n"
+            "   --- styles.css ---\n"
+            "   (code content)\n"
+            
+            "3. NO IMPORTS/EXPORTS: Do NOT use `import ... from ...` or `export default ...`. "
+            "   React, ReactDOM, and Tailwind are globally available via CDN. "
+            "   Use `React.useState`, `React.useEffect`, etc. or treat them as globals.\n"
+            
+            "4. STYLING: Use Tailwind CSS ONLY. Design for Visual Excellence: "
+            "   - Use premium dark modes (slate-950, zinc-900).\n"
+            "   - Use vibrant gradients (from-cyan-500 to-blue-600).\n"
+            "   - Use rounded-2xl and glassmorphism (bg-white/10 backdrop-blur-md).\n"
+            
+            "5. BOOTSTRAPPING: In App.jsx, you MUST include this exact line at the bottom to render:\n"
+            "   ReactDOM.createRoot(document.getElementById('root')).render(<App />);\n"
+            
+            "6. CLEAN INDEX: Do NOT include <script src='App.jsx'> or any local file scripts in your index.html. "
+            "   I will inject the scripts myself.\n"
+            
+            "STRICTLY return ONLY the files in the described format."
         )
 
     def generate_website(self, brief: str, template_id: str = None) -> str:
@@ -195,24 +212,34 @@ class OllamaWebsiteGenerator:
 
         # 1. Try '--- filename ---' or '**filename**' or '### filename'
         # This regex is more lenient to handle common AI formatting variations
+        # We look for something that looks like a filename between separators
+        # Handle cases like: **index.html** or --- index.html --- or ### index.html
         sections = re.split(r'(?:---+\s*|(?:\*\*)|(?:###)\s*)([\w\./\-\\]+)(?:\s*---+|(?:\*\*)|(?:\n))', raw_text)
         
         if len(sections) > 1:
             for i in range(1, len(sections), 2):
-                filename = sections[i].strip()
+                filename = sections[i].strip().lower()
                 content = sections[i+1].strip()
                 
-                # Filter out garbage filenames
-                if "." not in filename or len(filename) > 50:
+                # Filter out garbage filenames or conversational leftovers
+                if "." not in filename or len(filename) > 50 or " " in filename:
+                    # Special check: maybe the AI said "Here is App.jsx" instead of a marker
                     continue
 
                 # Aggressively remove multiple layers of markdown code block wrappers
-                while content.startswith('```') or content.endswith('```'):
-                    content = re.sub(r'^```[\w]*\n?', '', content)
-                    content = re.sub(r'```$', '', content).strip()
+                # Handle cases where AI might put multiple blocks under one file
+                while content.startswith('```') or '```' in content[:100]:
+                    content = re.sub(r'^.*?```[\w]*\n?', '', content, count=1, flags=re.DOTALL)
+                    content = re.sub(r'```$', '', content.strip()).strip()
+                
+                # Cleanup internal markdown artifacts
+                content = re.sub(r'```$', '', content).strip()
                 
                 # Remove common header annotations the AI might add
                 content = re.sub(r'^(?://|#)\s*(?:javascript|jsx|css|html)\n?', '', content, flags=re.IGNORECASE)
+                
+                # If content contains ANOTHER marker, we might have over-consumed if the split failed
+                # But re.split usually handles this well.
                 
                 files[filename] = content.strip()
             
