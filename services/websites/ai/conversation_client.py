@@ -14,7 +14,7 @@ class ConversationalAIClient:
     Maintains conversation history and code context for iterative improvements.
     """
 
-    def __init__(self, model="llama3.1:8b", host=None):
+    def __init__(self, model="qwen2.5-coder:14b", host=None):
         self.host = host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
         self.model = os.environ.get("OLLAMA_MODEL", model)
         self.api_url = f"{self.host}/api/generate"

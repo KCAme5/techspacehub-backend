@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class WebsiteGenerator:
     def __init__(
         self,
-        model="llama3.1:8b",
+        model="qwen2.5-coder:14b",
         url="http://ollama-techspacehub:11434/api/generate",
     ):
         self.model = model
