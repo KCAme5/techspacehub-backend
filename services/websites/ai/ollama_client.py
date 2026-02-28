@@ -186,33 +186,26 @@ class OllamaWebsiteGenerator:
     def parse_multi_file_output(raw_text: str) -> dict:
         """
         Parse AI output that contains multiple files.
-        Supports both JSON format and '--- filename ---' format.
+        Supports JSON, '--- filename ---', and '**filename**' formats.
         """
         import re
         import json
 
-        # 1. Try JSON parsing
-        try:
-            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
-            if json_match:
-                cleaned = json_match.group(1)
-                data = json.loads(cleaned)
-                if isinstance(data, dict):
-                    files = {k: v for k, v in data.items() if isinstance(v, str) and "." in k}
-                    if files:
-                        return files
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-        # 2. Try '--- filename ---' pattern
         files = {}
-        # Pattern like: --- filename.ext --- \n ```language \n content \n ```
-        sections = re.split(r'---+\s*([\w\./\-\\]+)\s*---+', raw_text)
+
+        # 1. Try '--- filename ---' or '**filename**' or '### filename'
+        # This regex is more lenient to handle common AI formatting variations
+        sections = re.split(r'(?:---+\s*|(?:\*\*)|(?:###)\s*)([\w\./\-\\]+)(?:\s*---+|(?:\*\*)|(?:\n))', raw_text)
+        
         if len(sections) > 1:
             for i in range(1, len(sections), 2):
                 filename = sections[i].strip()
                 content = sections[i+1].strip()
                 
+                # Filter out garbage filenames
+                if "." not in filename or len(filename) > 50:
+                    continue
+
                 # Aggressively remove multiple layers of markdown code block wrappers
                 while content.startswith('```') or content.endswith('```'):
                     content = re.sub(r'^```[\w]*\n?', '', content)
@@ -226,15 +219,39 @@ class OllamaWebsiteGenerator:
             if files:
                 return files
 
-        # 3. Fallback: Extract from any markdown code blocks with labels
-        pattern = r"```([^\n]+)\n(.*?)```"
-        matches = re.findall(pattern, raw_text, re.DOTALL)
-        for filename, content in matches:
-            filename = filename.strip()
-            if "." in filename:
-                files[filename] = content.strip()
+        # 2. Try JSON parsing as fallback
+        try:
+            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+            if json_match:
+                cleaned = json_match.group(1)
+                data = json.loads(cleaned)
+                if isinstance(data, dict):
+                    files_json = {k: v for k, v in data.items() if isinstance(v, str) and "." in k}
+                    if files_json:
+                        return files_json
+        except (json.JSONDecodeError, ValueError):
+            pass
 
-        return files
+        # 3. Fallback: Extract from any markdown code blocks with labeled extensions
+        pattern = r"```([\w\.]+)\n(.*?)```"
+        matches = re.findall(pattern, raw_text, re.DOTALL)
+        for filename_hint, content in matches:
+            filename_hint = filename_hint.strip()
+            if "." in filename_hint:
+                files[filename_hint] = content.strip()
+            elif filename_hint.lower() in ["html", "jsx", "js", "css"]:
+                # If it's just a language, we might have already captured it above, 
+                # but if not, we can try to guess or use if we have a label before it.
+                pass
+
+        if files:
+            return files
+
+        # 4. Final fallback: treat as index.html
+        if raw_text.strip():
+            return {"index.html": raw_text.strip()}
+
+        return {}
 
     @staticmethod
     def merge_files_to_html(files: dict) -> str:
@@ -245,7 +262,11 @@ class OllamaWebsiteGenerator:
         if not html_content or "<div id='root'" not in html_content and '<div id="root"' not in html_content:
             html_content = "<!DOCTYPE html><html><head></head><body><div id='root'></div></body></html>"
 
-        # Explicitly ensure Babel and React CDNs are present
+        # STRIP Hallucinated script tags for local files to prevent 404s
+        # Matches <script src="App.jsx"></script>, <script src="./main.js">, etc.
+        html_content = re.sub(r'<script\s+src=["\']\.?/?[\w\./\-]+\.(?:jsx|js)["\']\s*>\s*</script>', '', html_content, flags=re.IGNORECASE)
+
+        # Force modern Tailwind 3 & React CDNs
         cdns = [
             "https://unpkg.com/react@18/umd/react.development.js",
             "https://unpkg.com/react-dom@18/umd/react-dom.development.js",
@@ -253,6 +274,9 @@ class OllamaWebsiteGenerator:
             "https://cdn.tailwindcss.com"
         ]
         
+        # We replace existing tailwind links to ensure Tailwind 3 (Play CDN) is the source of truth
+        html_content = re.sub(r'<link\s+rel=["\']stylesheet["\']\s+href=["\'][^"\']*tailwind[^"\']*["\']\s*/?>', '', html_content, flags=re.IGNORECASE)
+
         head_tags = ""
         for cdn in cdns:
             if cdn not in html_content:

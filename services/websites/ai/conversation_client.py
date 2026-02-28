@@ -29,201 +29,82 @@ class ConversationalAIClient:
 
     def _build_system_prompt(self, mode="generate", project_type="auto"):
         """Build system prompt based on mode and project type."""
-
-        # Base prompt for all modes
-        base_prompt = (
-            "You are an expert AI web developer. "
-            "Write highly modular, clean, and modern code. "
-            "Return ONLY valid code. No markdown formatting, no explanations. "
+        
+        base_rules = (
+            "You are an expert Frontend Web Developer. "
+            "Build high-quality, professional websites using React and Tailwind CSS. "
+            "CRITICAL RULES:\n"
+            "1. OUTPUT FORMAT: Output multiple files using the marker format:\n"
+            "   --- index.html ---\n"
+            "   --- App.jsx ---\n"
+            "   --- styles.css ---\n"
+            "2. NO IMPORTS: Do NOT use `import ... from ...`. React/ReactDOM are global.\n"
+            "3. STYLING: Use Tailwind CSS ONLY. Target a premium, modern aesthetic.\n"
+            "4. INDEX.HTML: Clean structure, <div id='root'></div>, NO <script src='...'> for local files.\n"
+            "5. APP.JSX: Main entry point. End with `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`."
         )
 
         if mode == "generate":
-            return (
-                "You are an expert AI React developer. "
-                "Write modular React code using functional components. "
-                "Use Tailwind CSS for ALL styling. CRITICAL: NO IMPORTS (`import ... from ...`). React/ReactDOM/Tailwind are global. "
-                "Output your project as separate files. Use this format for EACH file:\n\n"
-                "--- FILENAME.EXT ---\n"
-                "```language\n"
-                "content\n"
-                "```\n\n"
-                "Required files: index.html, App.jsx, styles.css. "
-                "In App.jsx, use `ReactDOM.createRoot(document.getElementById('root')).render(<App />);`. "
-                "Return ONLY the files. No explanations or intro text."
-            )
-
+            return f"{base_rules}\n\nReturn ONLY the files. No explanations."
+        
         elif mode == "revise":
             return (
-                "You are an expert AI React developer helping revise a website. "
-                "CRITICAL: Use Tailwind CSS for ALL styling. NO IMPORTS. "
-                "Output your revisions as separate files using the marker format:\n\n"
-                "--- FILENAME.EXT ---\n"
-                "```language\n"
-                "content\n"
-                "```\n\n"
-                "Update only the files that need changes. Return ONLY the files."
+                f"{base_rules}\n\n"
+                "You are helping revise a website. Update only the files that need changes. "
+                "Return the COMPLETE content of the updated files. No explanations."
             )
 
-    def generate_initial(
-        self, brief: str, project_type: str = "auto"
-    ) -> Generator[str, None, None]:
-        """Generate initial website from brief."""
-        prompt = f"System: {self._build_system_prompt('generate', project_type)}\n\nUser: Build a complete webpage based on this brief: {brief}"
-
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": True,
-            "options": self.options,
-        }
-
-        yield from self._stream_response(payload)
-
-    def revise_website(
-        self,
-        current_code: str,
-        user_request: str,
-        conversation_history: List[Dict] = None,
-    ) -> Generator[str, None, None]:
-        """
-        Revise website based on user request and conversation history.
-
-        Args:
-            current_code: The current HTML/CSS/JS code
-            user_request: What the user wants to change
-            conversation_history: List of previous messages [{'role': 'user'/'assistant', 'content': '...'}]
-        """
-        # Build context from conversation history (last 5 exchanges to stay within token limits)
-        context = ""
-        if conversation_history:
-            recent_history = conversation_history[-5:]  # Last 5 messages
-            for msg in recent_history:
-                context += f"\n{msg['role'].capitalize()}: {msg['content']}\n"
-
-        # Build the revision prompt
-        prompt = f"""System: {self._build_system_prompt('revise')}
-
-Current website code:
-```html
-{current_code[:8000]}  # Limit code to prevent context overflow
-```
-
-Previous conversation:
-{context}
-
-User's new request: {user_request}
-
-Based on the current code and the user's request, provide the COMPLETE revised HTML file with all changes applied:"""
-
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": True,
-            "options": self.options,
-        }
-
-        yield from self._stream_response(payload)
-
-    def _stream_response(self, payload: dict) -> Generator[str, None, None]:
-        """Stream response from Ollama."""
-        try:
-            logger.info(f"Sending request to {self.api_url} with model {self.model}")
-            with requests.post(
-                self.api_url, json=payload, stream=True, timeout=300
-            ) as r:
-                r.raise_for_status()
-                for line in r.iter_lines():
-                    if line:
-                        try:
-                            chunk = json.loads(line)
-                            yield chunk.get("response", "")
-                        except json.JSONDecodeError:
-                            continue
-        except requests.exceptions.Timeout:
-            logger.error("Ollama timeout")
-            yield "\n<!-- Error: AI generation timed out -->"
-        except Exception as e:
-            logger.error(f"Ollama error: {str(e)}")
-            yield f"\n<!-- Error: {str(e)} -->"
-
-    @staticmethod
-    def clean_code_output(raw_text: str) -> str:
-        """Clean up AI output - remove markdown code blocks."""
-        import re
-
-        # Remove markdown code blocks (html, jsx, js, json, etc.)
-        clean = re.sub(r'```(?:html|jsx|javascript|js|json)?\n?|```', '', raw_text, flags=re.IGNORECASE).strip()
-        return clean
+    # ... (skipping some methods)
 
     @staticmethod
     def parse_multi_file_output(raw_text: str) -> dict:
         """
         Parse AI output that contains multiple files.
-        Returns a dict mapping filenames to their contents.
-
-        If the output is valid JSON with file mappings, use that.
-        Otherwise, try to extract files from markdown code blocks.
-
-        Returns: {filename: content, ...}
+        Supports JSON, '--- filename ---', and '**filename**' formats.
         """
         import re
         import json
 
-        # First, try to parse as JSON
-    @staticmethod
-    def parse_multi_file_output(raw_text: str) -> dict:
-        """
-        Parse AI output that contains multiple files.
-        Supports both JSON format and '--- filename ---' format.
-        """
-        import re
-        import json
-
-        # 1. Try JSON parsing
-        try:
-            # Extract JSON block using regex if possible
-            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
-            if json_match:
-                cleaned = json_match.group(1)
-                data = json.loads(cleaned)
-                if isinstance(data, dict):
-                    files = {k: v for k, v in data.items() if isinstance(v, str) and "." in k}
-                    if files:
-                        return files
-        except (json.JSONDecodeError, ValueError):
-            pass
-
-        # 2. Try '--- filename ---' pattern
         files = {}
-        # Pattern like: --- filename.ext --- \n ```language \n content \n ```
-        sections = re.split(r'---+\s*([\w\./\-\\]+)\s*---+', raw_text)
+
+        # 1. Try '--- filename ---' or '**filename**' or '### filename'
+        sections = re.split(r'(?:---+\s*|(?:\*\*)|(?:###)\s*)([\w\./\-\\]+)(?:\s*---+|(?:\*\*)|(?:\n))', raw_text)
+        
         if len(sections) > 1:
             for i in range(1, len(sections), 2):
                 filename = sections[i].strip()
                 content = sections[i+1].strip()
-                # Remove markdown code block wrappers
-                content = re.sub(r'^```[\w]*\n?', '', content)
-                content = re.sub(r'```$', '', content)
+                
+                if "." not in filename or len(filename) > 50:
+                    continue
+
+                while content.startswith('```') or content.endswith('```'):
+                    content = re.sub(r'^```[\w]*\n?', '', content)
+                    content = re.sub(r'```$', '', content).strip()
+                
+                content = re.sub(r'^(?://|#)\s*(?:javascript|jsx|css|html)\n?', '', content, flags=re.IGNORECASE)
                 files[filename] = content.strip()
             
             if files:
                 return files
 
-        # 3. Fallback: Extract from any markdown code blocks with hints in labels
-        pattern = r"```([^\n]+)\n(.*?)```"
-        matches = re.findall(pattern, raw_text, re.DOTALL)
-        for filename, content in matches:
-            filename = filename.strip()
-            if "." in filename:
-                files[filename] = content.strip()
+        # 2. Try JSON parsing
+        try:
+            json_match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(1))
+                if isinstance(data, dict):
+                    files_json = {k: v for k, v in data.items() if isinstance(v, str) and "." in k}
+                    if files_json:
+                        return files_json
+        except:
+            pass
 
-        return files
-
-        # If no files found, treat entire output as single index.html
-        if not files and raw_text.strip():
+        # 3. Fallback: treat as index.html
+        if raw_text.strip():
             return {"index.html": raw_text.strip()}
 
-        return files
+        return {}
 
     @staticmethod
     def merge_files_to_html(files: dict) -> str:
@@ -232,7 +113,11 @@ Based on the current code and the user's request, provide the COMPLETE revised H
         if not html_content:
             html_content = "<!DOCTYPE html><html><head></head><body><div id='root'></div></body></html>"
 
-        # Ensure CDNs are present
+        # Remove local script hallucinations
+        html_content = re.sub(r'<script\s+src=["\']\.?/?[\w\./\-]+\.(?:jsx|js)["\']\s*>\s*</script>', '', html_content, flags=re.IGNORECASE)
+        # Remove tailwind link conflicts
+        html_content = re.sub(r'<link\s+rel=["\']stylesheet["\']\s+href=["\'][^"\']*tailwind[^"\']*["\']\s*/?>', '', html_content, flags=re.IGNORECASE)
+
         cdns = [
             "https://unpkg.com/react@18/umd/react.development.js",
             "https://unpkg.com/react-dom@18/umd/react-dom.development.js",
@@ -252,22 +137,28 @@ Based on the current code and the user's request, provide the COMPLETE revised H
 
         # Gather all JSX/JS content
         js_content = ""
-        for filename, content in files.items():
-            if filename.endswith((".js", ".jsx")) and filename != "index.html":
-                # Failsafe: Strip imports and exports that break CDN/Babel preview
-                content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
-                content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
-                content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
-                
-                # Failsafe: Convert old ReactDOM.render to createRoot
-                if "ReactDOM.render" in content and "createRoot" not in content:
-                    content = re.sub(
-                        r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?",
-                        r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);",
-                        content
-                    )
-                
-                js_content += f"\n/* --- {filename} --- */\n{content}\n"
+        entry_candidates = ["App.jsx", "App.js", "main.jsx", "main.js"]
+        other_files = []
+        for filename in files:
+            if filename in entry_candidates:
+                other_files.insert(0, filename)
+            elif filename.endswith((".js", ".jsx")) and filename != "index.html":
+                other_files.append(filename)
+
+        for filename in other_files:
+            content = files[filename]
+            content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+            content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
+            
+            if "ReactDOM.render" in content and "createRoot" not in content:
+                content = re.sub(
+                    r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?",
+                    r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);",
+                    content
+                )
+            
+            js_content += f"\n/* --- {filename} --- */\n{content}\n"
 
         if js_content:
             script_tag = f'<script type="text/babel">\n{js_content}\n</script>'
@@ -281,7 +172,6 @@ Based on the current code and the user's request, provide the COMPLETE revised H
         for filename, content in files.items():
             if filename.endswith(".css"):
                 css_content += f"\n/* {filename} */\n{content}\n"
-        
         if css_content:
             css_tag = f"<style>{css_content}</style>"
             if "</head>" in html_content:
