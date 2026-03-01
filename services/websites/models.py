@@ -23,6 +23,10 @@ class WebsiteOrder(ServiceOrder):
         help_text="Type of project structure for AI generation",
     )
     generated_zip = models.FileField(upload_to="ai_generated_projects/zips/", null=True, blank=True)
+    is_ai_sandbox = models.BooleanField(
+        default=False, 
+        help_text="If True, this is an AI project that hasn't been converted to a formal order yet"
+    )
 
     def save(self, *args, **kwargs):
         if not self.service_type:

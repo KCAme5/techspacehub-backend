@@ -13,7 +13,8 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role in ['management', 'staff'] or user.is_staff:
-            return WebsiteOrder.objects.all()
+            # Hide AI sandboxes from management/staff by default
+            return WebsiteOrder.objects.filter(is_ai_sandbox=False)
         return WebsiteOrder.objects.filter(client=user)
 
     def get_permissions(self):
@@ -114,3 +115,18 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
             BaseServiceLogic.update_status(order, 'in_progress', user=request.user, comment="AI website generation triggered after consent.")
             
         return Response({'status': 'consent marked'}, status=status.HTTP_200_OK)
+
+    @decorators.action(detail=True, methods=['post'])
+    def convert_to_order(self, request, pk=None):
+        order = self.get_object()
+        if not order.is_ai_sandbox:
+            return Response({"error": "This is already a formal order."}, status=400)
+        
+        # Mark as formal order
+        order.is_ai_sandbox = False
+        # Reset status if it was completed in sandbox, or keep it as is?
+        # User said "pricing shall be done separately", so maybe it stays 'completed' but is now visible to staff for pricing/invoicing.
+        order.save()
+        
+        BaseServiceLogic.update_status(order, order.status, user=request.user, comment="AI Sandbox converted to formal order by client.")
+        return Response({"message": "Successfully converted to a formal order. Our team will now review and contact you for pricing."})

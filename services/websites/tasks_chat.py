@@ -4,6 +4,9 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import logging
 import re
+from django.conf import settings
+from django.urls import reverse
+from services.common.services import BaseServiceLogic
 
 from .models import WebsiteOrder
 from .models_conversation import ConversationMessage, CodeRevision, ProjectFile
@@ -112,6 +115,9 @@ def process_revision_request(
             order=order, role="assistant", content=ai_response, code_context=clean_html
         )
 
+        # Use API endpoint to serve the HTML
+        preview_url = reverse("website-preview", kwargs={"order_id": order.id})
+        
         if preview_url.startswith("/"):
             if hasattr(settings, 'BACKEND_URL') and settings.BACKEND_URL:
                 preview_url = f"{settings.BACKEND_URL.rstrip('/')}{preview_url}"
