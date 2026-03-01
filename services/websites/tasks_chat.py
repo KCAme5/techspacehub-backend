@@ -49,8 +49,8 @@ def process_revision_request(
 
         # Stream the revision
         html_chunks = []
-        for chunk in client.revise_website(
-            current_code, user_message, conversation_history
+        for chunk in client.stream_revision(
+            user_message, current_code, conversation_history
         ):
             html_chunks.append(chunk)
             send_code_chunk(chunk)

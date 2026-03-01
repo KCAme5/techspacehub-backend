@@ -54,6 +54,37 @@ class ConversationalAIClient:
                 "Return the COMPLETE content of the updated files. No explanations."
             )
 
+    def stream_revision(self, user_message: str, current_code: str, history: List[Dict]) -> Generator[str, None, None]:
+        """Stream conversational revision from Ollama."""
+        system_prompt = self._build_system_prompt(mode="revise")
+        
+        # Build prompt with history and code context
+        full_prompt = f"System: {system_prompt}\n\n"
+        for msg in history[-5:]:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            full_prompt += f"{role}: {msg['content']}\n"
+        
+        full_prompt += f"\n[CURRENT CODE CONTEXT]\n{current_code}\n\n"
+        full_prompt += f"User: {user_message}\nAssistant:"
+
+        payload = {
+            "model": self.model,
+            "prompt": full_prompt,
+            "stream": True,
+            "options": self.options
+        }
+
+        try:
+            with requests.post(self.api_url, json=payload, stream=True, timeout=300) as r:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        yield chunk.get("response", "")
+        except Exception as e:
+            logger.error(f"Ollama Revision Stream Error: {str(e)}")
+            yield f"\n\n<!-- Error streaming revision: {str(e)} -->"
+
     # ... (skipping some methods)
 
     @staticmethod
