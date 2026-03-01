@@ -38,8 +38,8 @@ def generate_ai_website(order_id):
             comment="AI is currently writing the code. You can watch the live stream in the AI Workspace.",
         )
 
-        # Instantiate our Local AI Client
-        generator = OllamaWebsiteGenerator()
+        from .ai.ai_utils import get_universal_generator
+        generator = get_universal_generator()
         html_chunks = []
 
         send_log("Agent identified requirements. Starting code generation...", "status")

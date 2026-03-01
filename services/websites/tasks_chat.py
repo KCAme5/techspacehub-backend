@@ -44,7 +44,8 @@ def process_revision_request(
         send_status(f"Processing revision request: {user_message[:50]}...")
 
         # Initialize AI client
-        client = ConversationalAIClient()
+        from .ai.ai_utils import get_universal_conversational_client
+        client = get_universal_conversational_client()
 
         # Stream the revision
         html_chunks = []
