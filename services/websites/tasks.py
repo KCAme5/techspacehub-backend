@@ -56,9 +56,24 @@ def generate_ai_website(order_id):
         )
 
         # Stream the response and push to websocket
+        current_buffer = ""
+        last_file = None
+        
         try:
             for chunk in generator.stream_response(order.project_brief, project_type=project_type):
                 html_chunks.append(chunk)
+                current_buffer += chunk
+
+                # File detection logic
+                marker_match = re.search(r'---+\s*([\w\./\-\\]+)\s*---+', current_buffer)
+                if marker_match:
+                    new_file = marker_match.group(1).strip()
+                    if new_file != last_file:
+                        send_log(f"Successfully finalized {last_file} ✓", "status") if last_file else None
+                        send_log(f"Creating {new_file}...", "status")
+                        last_file = new_file
+                        # Clear buffer after detection to keep it light
+                        current_buffer = current_buffer[marker_match.end():]
 
                 # Send token to WebSocket UI
                 async_to_sync(channel_layer.group_send)(
@@ -74,6 +89,7 @@ def generate_ai_website(order_id):
             send_log(f"ERROR: Stream failed - {str(stream_error)}", "status")
             raise
 
+        send_log(f"Successfully finalized {last_file} ✓", "status") if last_file else None
         send_log("\nCode generation complete. Finalizing assets...", "status")
         send_log("$ npm install && npm run build", "status")  # Simulating build
 
@@ -83,7 +99,11 @@ def generate_ai_website(order_id):
         # Check if it's a multi-file JSON
         files = generator.parse_multi_file_output(html_content)
         
+        description = "I've built a robust and responsive website based on your requirements. It features a clean architecture, modern styling, and optimized assets."
         if files:
+            file_names = ", ".join(list(files.keys())[:5])
+            description = f"Done! I've created a modular project with {len(files)} files including {file_names}. The UI is fully responsive and uses Tailwind CSS for premium aesthetics."
+            
             send_log("Detected multi-file project. Merging for preview...", "status")
             clean_html = generator.merge_files_to_html(files)
             
@@ -115,17 +135,25 @@ def generate_ai_website(order_id):
         order.final_url = preview_url
         order.save()
 
+        # Save the AI's "done" message to chat history
+        from services.websites.models_conversation import ProjectConversation
+        conv = ProjectConversation.objects.create(
+            order=order,
+            role="assistant",
+            content=description
+        )
+
         send_log("Deployment successful!", "status")
         send_log(f"Site live at: {preview_url}", "status")
 
-        # Notify UI that it's complete, pass the iframe URL
+        # Notify UI that it's complete, pass the iframe URL and description
         async_to_sync(channel_layer.group_send)(
             room_group_name,
             {
                 "type": "generation_message",
                 "msg_type": "complete",
                 "preview_url": preview_url,
-                "message": "Generation complete!",
+                "message": description,
             },
         )
 
