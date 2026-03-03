@@ -1,7 +1,7 @@
 import os
 import logging
 from groq import Groq
-from .ollama_client import BaseWebsiteGenerator
+from .ai_utils import BaseWebsiteGenerator
 
 logger = logging.getLogger(__name__)
 

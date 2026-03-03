@@ -26,7 +26,7 @@ def generate_ai_website(order_id):
 
     try:
         order = WebsiteOrder.objects.get(id=order_id)
-        logger.info(f"Starting Local AI website generation for order {order_id}")
+        logger.info(f"Starting AI website generation for order {order_id}")
 
         send_log("Initializing AI Workspace...", "status")
         send_log("$ mkdir -p /app/workspace", "status")
