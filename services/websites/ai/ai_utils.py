@@ -20,26 +20,26 @@ class BaseWebsiteGenerator:
             "1. NO CONVERSATION: Do NOT provide any intro text or outro. "
             "   START DIRECTLY with the first file separator.\n"
             
-            "2. MULTI-FILE FORMAT: Use these EXACT markers for EVERY file:\n"
-            "   --- filename ---\n"
-            "   (code)\n"
+            "STRICTLY return ONLY the code sections. DO NOT wrap the entire response in an <html> tag or single block. "
+            "Use the markers below to separate distinct files."
         )
 
         if project_type == "react":
             prompt += (
-                "3. REACT FRAMEWORK STRUCTURE:\n"
+                "3. REACT FRAMEWORK STRUCTURE (MANDATORY):\n"
                 "   - Use Standard React patterns with `import` and `export` statements.\n"
-                "   - Organize code into folders: `src/components/`, `src/pages/`, `src/styles/`.\n"
+                "   - Folder structure: `src/components/`, `src/pages/`, `src/styles/`.\n"
                 "   - REQUIRED FILES: `src/App.jsx`, `src/index.css`, `src/main.jsx`, `public/index.html`.\n"
-                "   - In `src/main.jsx`, bootstrap using `ReactDOM.createRoot`.\n"
-                "   - Do NOT use plain React globals; use ES Modules.\n"
+                "   - In `src/main.jsx`, use: `import App from './App'; ... ReactDOM.createRoot(document.getElementById('root')).render(<App />);`\n"
+                "   - Do NOT use `React.useState`; use `import { useState } from 'react';`.\n"
             )
         else:
             prompt += (
                 "3. SINGLE BUNDLE STRUCTURE (LEGACY/SIMPLE):\n"
                 "   - React, ReactDOM, and Tailwind are global. Do NOT use `import` or `export`.\n"
                 "   - Use `React.useState`, `React.useEffect`, etc.\n"
-                "   - In App.jsx, include `ReactDOM.createRoot(document.getElementById('root')).render(<App />);` at the end.\n"
+                "   - Files: `index.html`, `App.js`, `styles.css`.\n"
+                "   - In App.js, include `ReactDOM.createRoot(document.getElementById('root')).render(<App />);` at the end.\n"
             )
 
         prompt += (

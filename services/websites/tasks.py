@@ -100,11 +100,32 @@ def generate_ai_website(order_id):
         files = generator.parse_multi_file_output(html_content)
         
         description = "I've built a robust and responsive website based on your requirements. It features a clean architecture, modern styling, and optimized assets."
+        
+        from .models_conversation import ProjectFile
+        # Clear any existing files for this order (safety)
+        ProjectFile.objects.filter(order=order).delete()
+
         if files:
             file_names = ", ".join(list(files.keys())[:5])
             description = f"Done! I've created a modular project with {len(files)} files including {file_names}. The UI is fully responsive and uses Tailwind CSS for premium aesthetics."
             
-            send_log("Detected multi-file project. Merging for preview...", "status")
+            send_log("Detected multi-file project. Saving individual files...", "status")
+            
+            # Save each file to the ProjectFile model
+            for filename, content in files.items():
+                file_type = filename.split(".")[-1] if "." in filename else "other"
+                # Mark main entry points
+                is_entry = filename in ["index.html", "public/index.html", "src/App.jsx", "App.jsx"]
+                
+                ProjectFile.objects.create(
+                    order=order,
+                    filename=filename,
+                    file_type=file_type,
+                    content=content,
+                    is_entry_point=is_entry
+                )
+
+            send_log("Merging for preview...", "status")
             clean_html = generator.merge_files_to_html(files)
             
             # Save the original files as a ZIP for download
@@ -115,6 +136,15 @@ def generate_ai_website(order_id):
         else:
             send_log("Detected single-file project. Cleaning up code...", "status")
             clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', html_content, flags=re.IGNORECASE).strip()
+            
+            # Save as a single ProjectFile entry
+            ProjectFile.objects.create(
+                order=order,
+                filename="index.html",
+                file_type="html",
+                content=clean_html,
+                is_entry_point=True
+            )
 
         # Save index.html for the preview
         filename = f"index.html"
