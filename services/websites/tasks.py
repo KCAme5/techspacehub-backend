@@ -136,8 +136,8 @@ def generate_ai_website(order_id):
         order.save()
 
         # Save the AI's "done" message to chat history
-        from services.websites.models_conversation import ProjectConversation
-        conv = ProjectConversation.objects.create(
+        from services.websites.models_conversation import ConversationMessage
+        conv = ConversationMessage.objects.create(
             order=order,
             role="assistant",
             content=description
