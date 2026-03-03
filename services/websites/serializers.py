@@ -10,7 +10,7 @@ class WebsiteRevisionSerializer(serializers.ModelSerializer):
 class WebsiteOrderCreateSerializer(serializers.ModelSerializer, BaseServiceOrderSerializer):
     class Meta:
         model = WebsiteOrder
-        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'is_ai_sandbox']
+        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'is_ai_sandbox', 'ai_project_type']
         read_only_fields = BaseServiceOrderSerializer.Meta.read_only_fields
 
 class WebsiteOrderProgressSerializer(serializers.ModelSerializer, BaseServiceOrderSerializer):
@@ -18,5 +18,5 @@ class WebsiteOrderProgressSerializer(serializers.ModelSerializer, BaseServiceOrd
     
     class Meta:
         model = WebsiteOrder
-        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'revision_count', 'final_url', 'brief_files', 'generated_zip', 'revisions', 'is_ai_sandbox']
+        fields = BaseServiceOrderSerializer.Meta.fields + ['project_brief', 'selected_template_id', 'deadline', 'revision_count', 'final_url', 'brief_files', 'generated_zip', 'revisions', 'is_ai_sandbox', 'ai_project_type']
         read_only_fields = BaseServiceOrderSerializer.Meta.read_only_fields

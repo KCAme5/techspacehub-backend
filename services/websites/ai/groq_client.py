@@ -16,13 +16,13 @@ class GroqWebsiteGenerator(BaseWebsiteGenerator):
         self.model = model
         self.client = Groq(api_key=self.api_key) if self.api_key else None
 
-    def generate_website(self, brief: str, template_id: str = None) -> str:
+    def generate_website(self, brief: str, template_id: str = None, project_type: str = "single_file") -> str:
         if not self.client:
             raise Exception("Groq API key (LLAMA_API_KEY) not found in environment.")
 
-        logger.info(f"Groq Web Gen | Model: {self.model} | Brief: {brief[:50]}...")
+        logger.info(f"Groq Web Gen | Model: {self.model} | Brief: {brief[:50]}... | Type: {project_type}")
         
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(project_type=project_type)
         user_prompt = f"Build a complete, responsive webpage based on this brief: {brief}"
         if template_id:
             user_prompt += f"\nFollow the design language and structure of template: {template_id}"
@@ -40,7 +40,7 @@ class GroqWebsiteGenerator(BaseWebsiteGenerator):
             raw_text = chat_completion.choices[0].message.content
             files = self.parse_multi_file_output(raw_text)
             
-            if files and "index.html" in files:
+            if files and ("index.html" in files or "public/index.html" in files):
                 return self.merge_files_to_html(files)
             
             import re
@@ -50,13 +50,13 @@ class GroqWebsiteGenerator(BaseWebsiteGenerator):
             logger.error(f"Groq Web Gen Error: {str(e)}")
             raise
 
-    def stream_response(self, brief: str):
+    def stream_response(self, brief: str, project_type: str = "single_file"):
         if not self.client:
             logger.error("Groq API key missing for stream.")
             yield "<!-- Error: Groq API key missing -->"
             return
 
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(project_type=project_type)
         user_prompt = f"Build a complete webpage based on this brief: {brief}"
 
         try:

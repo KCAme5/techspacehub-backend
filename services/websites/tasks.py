@@ -43,18 +43,21 @@ def generate_ai_website(order_id):
         from .ai.ai_utils import get_universal_generator
         generator = get_universal_generator()
         html_chunks = []
+        
+        # Get project type from order (default to single_file if not set)
+        project_type = order.ai_project_type or "single_file"
 
-        send_log("Agent identified requirements. Starting code generation...", "status")
+        send_log(f"Agent identified requirements ({project_type}). Starting code generation...", "status")
         send_log("$ touch index.html", "status")
         send_log("Writing index.html...", "status")
 
         logger.info(
-            f"About to stream response for order {order_id}, brief length: {len(order.project_brief) if order.project_brief else 0}"
+            f"About to stream response for order {order_id}, brief length: {len(order.project_brief) if order.project_brief else 0}, type: {project_type}"
         )
 
         # Stream the response and push to websocket
         try:
-            for chunk in generator.stream_response(order.project_brief):
+            for chunk in generator.stream_response(order.project_brief, project_type=project_type):
                 html_chunks.append(chunk)
 
                 # Send token to WebSocket UI

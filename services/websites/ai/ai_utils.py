@@ -11,8 +11,8 @@ logger = logging.getLogger(__name__)
 class BaseWebsiteGenerator:
     """Base class for AI website generators with shared parsing and prompt logic."""
     
-    def _build_system_prompt(self):
-        return (
+    def _build_system_prompt(self, project_type="single_file"):
+        prompt = (
             "You are an AUTHORITATIVE Senior Frontend Engineer and UI/UX Designer. "
             "Your output will be used to automatically build a high-end production application. "
             
@@ -21,32 +21,40 @@ class BaseWebsiteGenerator:
             "   START DIRECTLY with the first file separator.\n"
             
             "2. MULTI-FILE FORMAT: Use these EXACT markers for EVERY file:\n"
-            "   --- index.html ---\n"
+            "   --- filename ---\n"
             "   (code)\n"
-            "   --- App.jsx ---\n"
-            "   (code)\n"
-            "   --- styles.css ---\n"
-            "   (code)\n"
-            
-            "3. NO IMPORTS/EXPORTS: Do NOT use `import` or `export`. "
-            "   React, ReactDOM, and Tailwind are global. "
-            "   Use `React.useState`, `React.useEffect`, etc.\n"
-            
+        )
+
+        if project_type == "react":
+            prompt += (
+                "3. REACT FRAMEWORK STRUCTURE:\n"
+                "   - Use Standard React patterns with `import` and `export` statements.\n"
+                "   - Organize code into folders: `src/components/`, `src/pages/`, `src/styles/`.\n"
+                "   - REQUIRED FILES: `src/App.jsx`, `src/index.css`, `src/main.jsx`, `public/index.html`.\n"
+                "   - In `src/main.jsx`, bootstrap using `ReactDOM.createRoot`.\n"
+                "   - Do NOT use plain React globals; use ES Modules.\n"
+            )
+        else:
+            prompt += (
+                "3. SINGLE BUNDLE STRUCTURE (LEGACY/SIMPLE):\n"
+                "   - React, ReactDOM, and Tailwind are global. Do NOT use `import` or `export`.\n"
+                "   - Use `React.useState`, `React.useEffect`, etc.\n"
+                "   - In App.jsx, include `ReactDOM.createRoot(document.getElementById('root')).render(<App />);` at the end.\n"
+            )
+
+        prompt += (
             "4. VISUAL EXCELLENCE (ROBUST STYLING):\n"
-            "   - Use Tailwind CSS for EVERYTHING. Do NOT use plain CSS unless absolutely necessary.\n"
+            "   - Use Tailwind CSS for EVERYTHING. Generate rich, premium UI components.\n"
             "   - Layout: Use flexible containers, centering, and generous padding/margins.\n"
             "   - Colors: Use premium palettes (Zinc, Slate, Emerald, Indigo). Use 900/950 for backgrounds.\n"
-            "   - Effects: Use `backdrop-blur`, `shadow-2xl`, `rounded-3xl`, and subtle `border`. Use `animate-pulse` or `animate-bounce` for micro-interactions.\n"
-            "   - Typography: Use bold weights for headers, high tracking for uppercase labels. Use `leading-relaxed` for body text.\n"
+            "   - Effects: Use `backdrop-blur`, `shadow-2xl`, `rounded-3xl`, and subtle `border`.\n"
             "   - Components: Build distinct sections (Hero, Features, Pricing, Footer) with clear visual hierarchy.\n"
             
-            "5. BOOTSTRAPPING: In App.jsx, include this at the VERY end:\n"
-            "   ReactDOM.createRoot(document.getElementById('root')).render(<App />);\n"
+            "5. NO PLACEHOLDERS: Use descriptive, high-quality content. For images, use 'https://images.unsplash.com/...' if possible.\n"
             
-            "6. CLEAN INDEX: Do NOT include <script src='App.jsx'>. I will handle injection.\n"
-            
-            "STRICTLY return ONLY code sections."
+            "STRICTLY return ONLY the code sections separated by the markers."
         )
+        return prompt
 
     @staticmethod
     def parse_multi_file_output(raw_text: str) -> dict:
@@ -106,11 +114,23 @@ class BaseWebsiteGenerator:
         for filename in sorted_files:
             if not filename.endswith((".js", ".jsx")) or filename == "index.html": continue
             content = files[filename]
-            content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
-            content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
-            content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
+            
+            # If standard React (with imports/exports), we need to strip them for the Babeled preview
+            is_standard_react = "import " in content or "export " in content
+            
+            if is_standard_react:
+                # Strip imports and exports to make it work in a single Babel script tag
+                content = re.sub(r"^\s*import\s+[\s\S]*?from\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*import\s+['\"].*?['\"];?\s*$", "", content, flags=re.MULTILINE)
+                content = re.sub(r"^\s*export\s+(default\s+)?", "", content, flags=re.MULTILINE)
+                
+                # Replace standard React components with global React calls if necessary
+                # Actually Babel handles some of this, but we need to ensure the variables are available.
+                # For simplicity, we assume they are all in one scope.
+            
             if "ReactDOM.render" in content and "createRoot" not in content:
                 content = re.sub(r"ReactDOM\.render\s*\(\s*(<[\s\S]+?>)\s*,\s*document\.getElementById\(['\"]root['\"]\)\s*\);?", r"const root = ReactDOM.createRoot(document.getElementById('root'));\nroot.render(\1);", content)
+            
             js_content += f"\n/* --- {filename} --- */\n{content}\n"
         if js_content:
             script_tag = f'<script type="text/babel">\n{js_content}\n</script>'
