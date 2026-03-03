@@ -10,7 +10,6 @@ import logging
 
 from .models import WebsiteOrder
 from .models_conversation import ConversationMessage, CodeRevision, ProjectFile
-from .ai.conversation_client import ConversationalAIClient
 from .tasks import generate_ai_website
 from .tasks_chat import process_revision_request
 

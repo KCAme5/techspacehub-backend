@@ -10,7 +10,6 @@ from services.common.services import BaseServiceLogic
 
 from .models import WebsiteOrder
 from .models_conversation import ConversationMessage, CodeRevision, ProjectFile
-from .ai.conversation_client import ConversationalAIClient
 
 logger = logging.getLogger(__name__)
 

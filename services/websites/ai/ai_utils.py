@@ -124,6 +124,10 @@ class BaseWebsiteGenerator:
         return html_content
 
     @staticmethod
+    def clean_code_output(raw_text: str) -> str:
+        return re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', raw_text, flags=re.IGNORECASE).strip()
+
+    @staticmethod
     def create_zip_archive(files: dict, filename: str = "website.zip") -> io.BytesIO:
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
