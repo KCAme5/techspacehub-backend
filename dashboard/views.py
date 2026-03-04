@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from django.db.models import Count, Max, Q, Prefetch
 from django.utils import timezone
 from datetime import timedelta
+import traceback
 
 from courses.models import (
     Course,
@@ -54,8 +55,10 @@ class UserDashboardProgressView(APIView):
             return Response(serializer.data)
 
         except Exception as e:
+            print(f"DEBUG: Dashboard Progress Error: {str(e)}")
+            traceback.print_exc()
             return Response(
-                {"error": "Unable to load dashboard data"},
+                {"error": f"Server Error: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
