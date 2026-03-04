@@ -60,6 +60,11 @@ urlpatterns = [
     path("lessons/", views.LessonList.as_view(), name="lesson-list"),
     path("lessons/<int:pk>/", views.LessonDetail.as_view(), name="lesson-detail"),
     path(
+        "enrolled/lessons/<int:pk>/",
+        views.LessonDetail.as_view(),
+        name="enrolled-lesson-detail",
+    ),
+    path(
         "weeks/<int:week_id>/lessons/",
         views.WeekLessonsList.as_view(),
         name="week-lessons-list",

@@ -12,7 +12,12 @@ from django.utils import timezone
 from datetime import timedelta
 
 from courses.models import (
+    Course,
+    Week,
     Lesson,
+    Enrollment,
+    Progress,
+    WeeklyProgress,
     WeeklyQuizSubmission,
     UserPoints,
 )
