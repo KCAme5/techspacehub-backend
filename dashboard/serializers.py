@@ -54,3 +54,4 @@ class DashboardStatsSerializer(serializers.Serializer):
     completed_weeks = serializers.IntegerField()
     overall_progress = serializers.IntegerField()
     active_courses = serializers.IntegerField()
+    total_points = serializers.IntegerField()

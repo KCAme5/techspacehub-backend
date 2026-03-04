@@ -12,13 +12,9 @@ from django.utils import timezone
 from datetime import timedelta
 
 from courses.models import (
-    Course,
-    Week,
-    Enrollment,
-    WeeklyProgress,
-    Progress,
     Lesson,
     WeeklyQuizSubmission,
+    UserPoints,
 )
 from .serializers import (
     CourseProgressSerializer,
@@ -262,12 +258,15 @@ class DashboardStatsView(APIView):
             .count()
         )
 
+        user_points, _ = UserPoints.objects.get_or_create(user=user)
+
         stats = {
             "total_courses": total_courses,
             "total_enrolled_weeks": total_enrolled_weeks,
             "completed_weeks": completed_weeks,
             "overall_progress": overall_progress,
             "active_courses": active_courses,
+            "total_points": user_points.total_points,
         }
 
         serializer = DashboardStatsSerializer(stats)

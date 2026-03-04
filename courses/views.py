@@ -289,6 +289,12 @@ class ProgressMarkCompleted(generics.CreateAPIView):
 
         weekly_progress.save()
 
+        # Award XP if not already awarded for this lesson
+        reason = f"Completed lesson: {lesson.title}"
+        if not PointTransaction.objects.filter(user=request.user, reason=reason).exists():
+            user_points, _ = UserPoints.objects.get_or_create(user=request.user)
+            user_points.add_points(50, reason=reason)
+
         serializer = ProgressSerializer(progress)
         return Response(serializer.data)
 
@@ -507,6 +513,12 @@ class WeeklyQuizSubmissionView(APIView):
                     submission=submission, question_id=qid
                 )
                 student_answer.selected_choices.set([selected_id])
+
+            if passed:
+                reason = f"Passed quiz: {quiz.title}"
+                if not PointTransaction.objects.filter(user=user, reason=reason).exists():
+                    user_points, _ = UserPoints.objects.get_or_create(user=user)
+                    user_points.add_points(100, reason=reason)
 
             return Response(
                 {
