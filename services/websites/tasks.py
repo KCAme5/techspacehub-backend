@@ -64,12 +64,17 @@ def generate_ai_website(order_id):
                 html_chunks.append(chunk)
                 current_buffer += chunk
 
-                # File detection logic
-                marker_match = re.search(r'---+\s*([\w\./\-\\]+)\s*---+', current_buffer)
+                # File detection logic: matches --- filename --- or *** # filename ***
+                marker_match = re.search(r'(?:\n|^)(?:[#\-\*]{3,}\s*|File:\s*)(?:#\s*|file:?\s*)?["\']?([\w\./\-\\]+)["\']?(?:\s*[#\-\*]{3,}|(?::?\s*\n))', current_buffer, flags=re.IGNORECASE)
                 if marker_match:
                     new_file = marker_match.group(1).strip()
+                    # Clean filename: remove trailing decorators AI might add
+                    new_file = re.sub(r'[:#\*].*$', '', new_file).strip()
+                    new_file = new_file.replace('"', '').replace("'", "")
+                    
                     if new_file != last_file:
-                        send_log(f"Successfully finalized {last_file} ✓", "status") if last_file else None
+                        if last_file:
+                            send_log(f"Finalized {last_file} ✓", "status")
                         send_log(f"Creating {new_file}...", "status")
                         last_file = new_file
                         # Clear buffer after detection to keep it light
@@ -96,13 +101,13 @@ def generate_ai_website(order_id):
         # 2. Process the generated output
         html_content = "".join(html_chunks)
 
-        # Check if it's a multi-file JSON
+        # Check for multi-file project
         files = generator.parse_multi_file_output(html_content)
         
-        description = "I've built a robust and responsive website based on your requirements. It features a clean architecture, modern styling, and optimized assets."
+        description = "I've built a robust and responsive website based on your requirements."
         
         from .models_conversation import ProjectFile
-        # Clear any existing files for this order (safety)
+        # CLEAR existing files for this order (critical for clean UI)
         ProjectFile.objects.filter(order=order).delete()
 
         if files:
@@ -113,31 +118,33 @@ def generate_ai_website(order_id):
             
             # Save each file to the ProjectFile model
             for filename, content in files.items():
-                file_type = filename.split(".")[-1] if "." in filename else "other"
-                # Mark main entry points
-                is_entry = filename in ["index.html", "public/index.html", "src/App.jsx", "App.jsx"]
+                file_type = filename.split(".")[-1].lower() if "." in filename else "other"
+                # Map extension to model choices
+                type_map = {'js': 'js', 'jsx': 'jsx', 'ts': 'ts', 'tsx': 'tsx', 'css': 'css', 'html': 'html', 'json': 'json'}
+                model_type = type_map.get(file_type, 'html' if file_type == 'html' else 'other')
+
+                is_entry = any(p in filename.lower() for p in ["index.html", "app.jsx", "app.js", "main.jsx"])
                 
                 ProjectFile.objects.create(
                     order=order,
                     filename=filename,
-                    file_type=file_type,
+                    file_type=model_type,
                     content=content,
                     is_entry_point=is_entry
                 )
 
-            send_log("Merging for preview...", "status")
+            send_log("Merging for premium preview...", "status")
+            # This handles inlining CSS/JS to prevent 404s
             clean_html = generator.merge_files_to_html(files)
             
             # Save the original files as a ZIP for download
             zip_buffer = generator.create_zip_archive(files)
             zip_filename = f"project_{order.id}.zip"
-            zip_path = f"ai_generated_projects/zips/{zip_filename}"
-            order.generated_zip.save(zip_path, ContentFile(zip_buffer.getvalue()))
+            order.generated_zip.save(zip_filename, ContentFile(zip_buffer.getvalue()), save=False)
         else:
-            send_log("Detected single-file project. Cleaning up code...", "status")
-            clean_html = re.sub(r'```(?:html|jsx|javascript|js)?\n?|```', '', html_content, flags=re.IGNORECASE).strip()
-            
-            # Save as a single ProjectFile entry
+            send_log("Single-file project detected. Finalizing...", "status")
+            clean_html = generator.clean_code_output(html_content)
+            # Create a single project file entry
             ProjectFile.objects.create(
                 order=order,
                 filename="index.html",
@@ -145,10 +152,8 @@ def generate_ai_website(order_id):
                 content=clean_html,
                 is_entry_point=True
             )
-
         # Save index.html for the preview
-        filename = f"index.html"
-        file_path = f"ai_generated_projects/{order.id}/{filename}"
+        file_path = f"ai_generated_projects/{order.id}.html"
         send_log(f"Saving assets to permanent storage...", "status")
 
         # Save the preview HTML to brief_files (which views_serve.py uses)

@@ -57,37 +57,36 @@ def process_revision_request(
         # Clean up and parse the output
         raw_html = "".join(html_chunks)
 
-        # Try to parse as multi-file project
+        # Try to parse modular project
         files = client.parse_multi_file_output(raw_html)
 
-        if len(files) > 1:
-            # Multi-file project detected
-            send_status(f"Saving {len(files)} files...")
-
-            # Clear old project files for this order
+        if files:
+            # Modular project detected
+            send_status(f"Saving {len(files)} project files...")
             ProjectFile.objects.filter(order=order).delete()
 
-            # Save each file
             for filename, content in files.items():
-                file_type = filename.split(".")[-1] if "." in filename else "other"
-                is_entry = filename in ["index.html", "App.jsx", "App.tsx"]
+                file_ext = filename.split(".")[-1].lower() if "." in filename else "other"
+                type_map = {'js': 'js', 'jsx': 'jsx', 'ts': 'ts', 'tsx': 'tsx', 'css': 'css', 'html': 'html'}
+                model_type = type_map.get(file_ext, 'other')
+
+                is_entry = any(p in filename.lower() for p in ["index.html", "app.jsx", "app.js", "main.jsx"])
 
                 ProjectFile.objects.create(
                     order=order,
                     filename=filename,
-                    file_type=file_type,
+                    file_type=model_type,
                     content=content,
                     is_entry_point=is_entry,
                 )
 
-            # Merge for preview
+            # Bundle for browser preview (inlines CSS/JS)
             clean_html = client.merge_files_to_html(files)
         else:
-            # Single file (backward compatibility)
+            send_status("Cleaning single-file revision...")
             clean_html = client.clean_code_output(raw_html)
-            # Clear any old project files
+            # Fallback entry
             ProjectFile.objects.filter(order=order).delete()
-            # Create a single project file entry
             ProjectFile.objects.create(
                 order=order,
                 filename="index.html",
