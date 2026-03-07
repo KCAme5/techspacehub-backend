@@ -162,6 +162,8 @@ class LessonSerializer(serializers.ModelSerializer):
             "is_completed",
             "is_locked",
             "enrollment_plan",
+            "lab_type",
+            "lab_config",
         ]
 
     def get_is_completed(self, obj):

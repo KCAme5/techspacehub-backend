@@ -90,6 +90,13 @@ class Week(models.Model):
 
 
 class Lesson(models.Model):
+    LAB_TYPE_CHOICES = [
+        ("none", "None"),
+        ("ide", "IDE (Code Editor)"),
+        ("terminal", "Terminal (Linux/Kali)"),
+        ("wasm", "WebAssembly (Browser Execution)"),
+    ]
+
     week = models.ForeignKey(Week, on_delete=models.CASCADE, related_name="lessons")
     title = models.CharField(max_length=200)
     slug = models.SlugField()
@@ -100,6 +107,14 @@ class Lesson(models.Model):
     duration = models.IntegerField(help_text="Lesson duration in minutes", default=0)
     order = models.PositiveIntegerField(default=0)
     is_preview = models.BooleanField(default=False)
+    
+    # New fields for interactive labs
+    lab_type = models.CharField(max_length=20, choices=LAB_TYPE_CHOICES, default="none")
+    lab_config = models.JSONField(
+        default=dict, 
+        blank=True, 
+        help_text="Configuration for the lab environment (e.g., {'initial_code': '...', 'language': 'python'})"
+    )
 
     class Meta:
         ordering = ["order"]
