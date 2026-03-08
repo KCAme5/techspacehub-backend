@@ -48,7 +48,7 @@ class Course(models.Model):
     )
     icon = models.CharField(max_length=10, default='💻')
     color = models.CharField(max_length=10, default='#e63946')
-    is_published = models.BooleanField(default=False)
+    is_published = models.BooleanField(default=True)
     category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
@@ -182,7 +182,7 @@ class Lesson(models.Model):
         default=dict, blank=True,
         help_text='Extra command:response pairs for the terminal simulation in this lesson'
     )
-    is_published = models.BooleanField(default=False)
+    is_published = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["order"]
@@ -882,7 +882,7 @@ class Level(models.Model):
     level_type  = models.CharField(max_length=20, choices=LEVEL_TYPE_CHOICES)
     description = models.TextField()
     order       = models.PositiveIntegerField(default=0)
-    is_published = models.BooleanField(default=False)
+    is_published = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['order']
@@ -905,7 +905,7 @@ class Module(models.Model):
     icon        = models.CharField(max_length=10, default='📦')
     color       = models.CharField(max_length=10, default='#48cae4')
     xp_reward   = models.IntegerField(default=50)
-    is_published = models.BooleanField(default=False)
+    is_published = models.BooleanField(default=True)
     # Pricing — staff sets per module
     # FREE RULE: module.order <= 2
     # PAID RULE: module.order > 2 → requires UserModuleAccess
