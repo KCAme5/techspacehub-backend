@@ -117,8 +117,7 @@ class LoginSerializer(serializers.Serializer):
         if not user:
             raise AuthenticationFailed("Invalid credentials")
 
-        if user.is_superuser:
-            raise AuthenticationFailed("Action is restricted to students")
+        # (Removed superuser block to allow staff/admin access to the frontend Staff Dashboard)
 
         return {"user": user}
 
