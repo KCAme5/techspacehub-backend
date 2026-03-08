@@ -32,6 +32,30 @@ class User(AbstractUser):
 
     email = models.EmailField(unique=True)
 
+    # ─── Hub gamification fields ──────────────────────────────────────────
+    total_xp    = models.IntegerField(default=0)
+    streak_days = models.IntegerField(default=1)
+    rank        = models.CharField(max_length=50, default='NEWBIE')
+
+    RANKS = [
+        (0,    'NEWBIE'),
+        (100,  'SCRIPT KIDDIE'),
+        (300,  'APPRENTICE'),
+        (600,  'HACKER'),
+        (1000, 'PRO HACKER'),
+        (1500, 'ELITE'),
+        (2500, 'LEGEND'),
+        (4000, 'GHOST'),
+    ]
+
+    def update_rank(self):
+        """Recalculate and save rank based on total_xp."""
+        for threshold, name in reversed(self.RANKS):
+            if self.total_xp >= threshold:
+                self.rank = name
+                break
+        self.save(update_fields=['rank', 'total_xp'])
+
     my_referral_code = models.CharField(
         max_length=50, unique=True, blank=True, null=True
     )
