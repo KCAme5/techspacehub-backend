@@ -31,10 +31,24 @@ class Course(models.Model):
         ("advanced", "Advanced"),
     )
 
+    DOMAIN_CHOICES = [
+        ('cybersecurity', 'Cybersecurity'),
+        ('programming',   'Programming'),
+        ('ai_ml',         'AI & Machine Learning'),
+    ]
+
     title = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
     thumbnail = models.URLField(blank=True)
+    # Domain determines which lab environment learners see
+    domain = models.CharField(
+        max_length=20, choices=DOMAIN_CHOICES, default='cybersecurity',
+        help_text='Determines the lab environment for all lessons in this course'
+    )
+    icon = models.CharField(max_length=10, default='💻')
+    color = models.CharField(max_length=10, default='#e63946')
+    is_published = models.BooleanField(default=False)
     category = models.ForeignKey(
         Category,
         on_delete=models.CASCADE,
@@ -50,6 +64,12 @@ class Course(models.Model):
         blank=True,
         null=True,
     )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='created_courses'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -62,7 +82,7 @@ class Course(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.title
+        return f"[{self.domain}] {self.title}"
 
 
 class Week(models.Model):
@@ -97,6 +117,13 @@ class Lesson(models.Model):
         ("wasm", "WebAssembly (Browser Execution)"),
     ]
 
+    LESSON_TYPE_CHOICES = [
+        ('drill',   'Terminal/Code Drill'),
+        ('reading', 'Reading + Theory'),
+        ('video',   'Video'),
+        ('lab',     'Full Lab'),
+    ]
+
     week = models.ForeignKey(Week, on_delete=models.CASCADE, related_name="lessons")
     title = models.CharField(max_length=200)
     slug = models.SlugField()
@@ -107,14 +134,54 @@ class Lesson(models.Model):
     duration = models.IntegerField(help_text="Lesson duration in minutes", default=0)
     order = models.PositiveIntegerField(default=0)
     is_preview = models.BooleanField(default=False)
-    
-    # New fields for interactive labs
+
+    # Legacy lab fields
     lab_type = models.CharField(max_length=20, choices=LAB_TYPE_CHOICES, default="none")
     lab_config = models.JSONField(
-        default=dict, 
-        blank=True, 
-        help_text="Configuration for the lab environment (e.g., {'initial_code': '...', 'language': 'python'})"
+        default=dict,
+        blank=True,
+        help_text="Configuration for the lab environment"
     )
+
+    # --- Hub education-path fields ---
+    # Link to a Module (optional — only set for hub lessons)
+    module = models.ForeignKey(
+        'courses.Module',
+        on_delete=models.CASCADE,
+        related_name='lessons',
+        null=True, blank=True,
+    )
+    icon = models.CharField(max_length=10, default='📖')
+    xp_reward = models.IntegerField(default=50)
+    lesson_type = models.CharField(
+        max_length=20, choices=LESSON_TYPE_CHOICES, default='drill'
+    )
+    theory_html = models.TextField(
+        blank=True,
+        help_text='HTML content — supports inline code highlighting'
+    )
+    has_lab = models.BooleanField(default=True)
+    # Programming lab config
+    lab_language = models.CharField(
+        max_length=20, blank=True,
+        choices=[
+            ('python','Python'), ('javascript','JavaScript'),
+            ('java','Java'), ('c','C'), ('cpp','C++'),
+        ],
+        help_text='Only used when course domain is programming'
+    )
+    starter_code = models.TextField(blank=True, help_text='Starter code shown in editor')
+    # Jupyter lab config
+    notebook_filename = models.CharField(
+        max_length=200, blank=True,
+        help_text='Filename of .ipynb in JupyterLite content dir. Only for ai_ml courses.'
+    )
+    # Terminal lab config
+    terminal_commands = models.JSONField(
+        default=dict, blank=True,
+        help_text='Extra command:response pairs for the terminal simulation in this lesson'
+    )
+    is_published = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["order"]
@@ -794,3 +861,107 @@ class RewardRedemption(models.Model):
         if self.status == "completed" and not self.processed_at:
             self.processed_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+# ============================================================
+#  HUB EDUCATION PATH MODELS
+#  Course → Level → Module → Lesson → Drill / Quiz
+# ============================================================
+
+class Level(models.Model):
+    LEVEL_TYPE_CHOICES = [
+        ('beginner',     'Beginner'),
+        ('intermediate', 'Intermediate'),
+        ('advanced',     'Advanced'),
+        ('expert',       'Expert'),
+    ]
+    course      = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='levels')
+    name        = models.CharField(max_length=100)
+    slug        = models.SlugField()
+    level_type  = models.CharField(max_length=20, choices=LEVEL_TYPE_CHOICES)
+    description = models.TextField()
+    order       = models.PositiveIntegerField(default=0)
+    is_published = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['order']
+        unique_together = ['course', 'slug']
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.course.title} — {self.name}"
+
+
+class Module(models.Model):
+    level       = models.ForeignKey(Level, on_delete=models.CASCADE, related_name='modules')
+    title       = models.CharField(max_length=200)
+    description = models.TextField()
+    order       = models.PositiveIntegerField(default=0)
+    icon        = models.CharField(max_length=10, default='📦')
+    color       = models.CharField(max_length=10, default='#48cae4')
+    xp_reward   = models.IntegerField(default=50)
+    is_published = models.BooleanField(default=False)
+    # Pricing — staff sets per module
+    # FREE RULE: module.order <= 2
+    # PAID RULE: module.order > 2 → requires UserModuleAccess
+    single_module_price = models.DecimalField(max_digits=8, decimal_places=2, default=299.00)
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"{self.level} — {self.title}"
+
+
+class Drill(models.Model):
+    """A terminal/code drill task within a hub Lesson."""
+    lesson  = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name='drills')
+    order   = models.PositiveIntegerField(default=0)
+    prompt  = models.CharField(max_length=100, default='$')
+    task    = models.TextField()
+    hint    = models.TextField()
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"Drill {self.order}: {self.task[:50]}"
+
+
+class DrillAnswer(models.Model):
+    """Accepted answers for a Drill — never exposed to learner API."""
+    drill             = models.ForeignKey(Drill, on_delete=models.CASCADE, related_name='answers')
+    answer            = models.CharField(max_length=500)
+    is_case_sensitive = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Answer for Drill {self.drill_id}: {self.answer[:40]}"
+
+
+class Quiz(models.Model):
+    """A single-question quiz attached to a hub Lesson (one per lesson)."""
+    lesson      = models.OneToOneField(Lesson, on_delete=models.CASCADE, related_name='quiz')
+    question    = models.TextField()
+    explanation = models.TextField()
+
+    def __str__(self):
+        return f"Quiz for: {self.lesson.title}"
+
+
+class QuizOption(models.Model):
+    """Answer options for a Quiz (A/B/C/D)."""
+    quiz       = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='options')
+    label      = models.CharField(max_length=1)   # A, B, C, D
+    text       = models.TextField()
+    is_correct = models.BooleanField(default=False)
+    order      = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order']
+
+    def __str__(self):
+        return f"{self.label}: {self.text[:40]}"

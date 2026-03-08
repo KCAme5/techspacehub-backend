@@ -25,6 +25,13 @@ from .models import (
     PointTransaction,
     Reward,
     RewardRedemption,
+    # Hub education-path models
+    Level,
+    Module,
+    Drill,
+    DrillAnswer,
+    Quiz,
+    QuizOption,
 )
 
 
@@ -47,12 +54,14 @@ class CourseAdmin(admin.ModelAdmin):
     list_display = [
         "title",
         "slug",
+        "domain",
         "category",
         "instructor",
         "is_active",
+        "is_published",
         "created_at",
     ]
-    list_filter = ["category", "is_active", "created_at"]
+    list_filter = ["domain", "category", "is_active", "is_published", "created_at"]
     search_fields = ["title", "description"]
     prepopulated_fields = {"slug": ["title"]}
     inlines = [WeekInline]
@@ -625,7 +634,96 @@ class RewardRedemptionAdmin(admin.ModelAdmin):
     mark_as_failed.short_description = "Mark selected as failed"
 
 
+# ============================================================
+#  HUB EDUCATION PATH ADMIN
+# ============================================================
+
+class ModuleInline(admin.TabularInline):
+    model = Module
+    extra = 0
+    fields = ['title', 'order', 'icon', 'color', 'xp_reward', 'single_module_price', 'is_published']
+    ordering = ['order']
+
+
+@admin.register(Level)
+class LevelAdmin(admin.ModelAdmin):
+    list_display  = ['course', 'name', 'level_type', 'order', 'is_published']
+    list_filter   = ['course', 'level_type', 'is_published']
+    search_fields = ['name', 'description', 'course__title']
+    prepopulated_fields = {'slug': ['name']}
+    ordering      = ['course', 'order']
+    inlines       = [ModuleInline]
+
+
+class DrillAnswerInline(admin.TabularInline):
+    model  = DrillAnswer
+    extra  = 1
+    fields = ['answer', 'is_case_sensitive']
+
+
+class DrillInline(admin.TabularInline):
+    model  = Drill
+    extra  = 0
+    fields = ['order', 'prompt', 'task', 'hint']
+    ordering = ['order']
+
+
+@admin.register(Module)
+class ModuleAdmin(admin.ModelAdmin):
+    list_display  = ['level', 'title', 'order', 'xp_reward', 'single_module_price', 'is_published']
+    list_filter   = ['level__course', 'is_published']
+    search_fields = ['title', 'description', 'level__name']
+    ordering      = ['level', 'order']
+
+
+@admin.register(Drill)
+class DrillAdmin(admin.ModelAdmin):
+    list_display  = ['lesson', 'order', 'prompt', 'get_task_preview']
+    list_filter   = ['lesson__module__level__course']
+    search_fields = ['task', 'hint', 'lesson__title']
+    ordering      = ['lesson', 'order']
+    inlines       = [DrillAnswerInline]
+
+    def get_task_preview(self, obj):
+        return obj.task[:60] + '...' if len(obj.task) > 60 else obj.task
+    get_task_preview.short_description = 'Task'
+
+
+@admin.register(DrillAnswer)
+class DrillAnswerAdmin(admin.ModelAdmin):
+    list_display  = ['drill', 'answer', 'is_case_sensitive']
+    list_filter   = ['is_case_sensitive', 'drill__lesson__module__level__course']
+    search_fields = ['answer', 'drill__task']
+
+
+class QuizOptionInline(admin.TabularInline):
+    model  = QuizOption
+    extra  = 4
+    fields = ['label', 'text', 'is_correct', 'order']
+    ordering = ['order']
+
+
+@admin.register(Quiz)
+class QuizAdmin(admin.ModelAdmin):
+    list_display  = ['lesson', 'get_question_preview']
+    list_filter   = ['lesson__module__level__course']
+    search_fields = ['question', 'explanation', 'lesson__title']
+    inlines       = [QuizOptionInline]
+
+    def get_question_preview(self, obj):
+        return obj.question[:80] + '...' if len(obj.question) > 80 else obj.question
+    get_question_preview.short_description = 'Question'
+
+
+@admin.register(QuizOption)
+class QuizOptionAdmin(admin.ModelAdmin):
+    list_display  = ['quiz', 'label', 'text', 'is_correct', 'order']
+    list_filter   = ['is_correct', 'quiz__lesson__module__level__course']
+    search_fields = ['text', 'quiz__question']
+    ordering      = ['quiz', 'order']
+
+
 # Customize admin site header and title
-admin.site.site_header = "Course Platform Administration"
-admin.site.site_title = "Course Platform Admin"
-admin.site.index_title = "Welcome to Course Platform Administration"
+admin.site.site_header = "TechSpaceHub Administration"
+admin.site.site_title  = "TechSpaceHub Admin"
+admin.site.index_title = "Welcome to TechSpaceHub Administration"

@@ -30,6 +30,11 @@ urlpatterns = [
         google_callback_fixed,
         name="google_callback_fixed",
     ),
+    # ─── Hub education-path endpoints ────────────────────────────────────
+    path("api/hub/", include("courses.hub_urls")),
+    path("api/hub/progress/", include("progress.urls")),
+    path("api/hub/payments/", include("payments.urls")),
+    path("api/hub/staff/", include("staff_dashboard.urls")),
 ]
 
 if settings.DEBUG:

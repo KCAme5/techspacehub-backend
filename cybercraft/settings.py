@@ -103,6 +103,10 @@ INSTALLED_APPS = [
     "live_classes",
     "management",
     "services",
+    # Hub education-path apps
+    "progress",
+    "payments",
+    "staff_dashboard",
 ]
 
 SITE_ID = 1
