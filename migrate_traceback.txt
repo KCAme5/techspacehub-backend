@@ -1,0 +1,14 @@
+[CELERY] BROKER: redis://default:Wqsvf6rZlnE1ysVp4K5qEBsmX8vQMX5LjJ0JcXyqIBIIYy3NqEVLGrFXFkEPN0D9@hww0skgccwc8k40kookw8kwo:6379/0
+[CELERY] BACKEND: redis://default:Wqsvf6rZlnE1ysVp4K5qEBsmX8vQMX5LjJ0JcXyqIBIIYy3NqEVLGrFXFkEPN0D9@hww0skgccwc8k40kookw8kwo:6379/0
+[Config] Loaded environment from: C:\Users\Chan\Desktop\TechSpaceV2\cybercraft\.env
+[Config] --- REDIS DEBUG START ---
+[Config] env_broker_url: redis://default:Wqsv...
+[Config] REDIS_URL: redis://default:Wqsv...
+[Config] CELERY_BROKER_URL: redis://default:Wqsv...
+[Config] --- REDIS DEBUG END ---
+[Config] Redis connection string determined. Host: 127.0.0.1, Port: 6379
+[Config] Using Authenticated Redis: hww0skgccwc8k40kookw8kwo:6379/0
+Operations to perform:
+  Apply all migrations: account, accounts, admin, auth, authtoken, billing, contenttypes, courses, dashboard, labs, library, management, payments, progress, services, sessions, sites, socialaccount
+Running migrations:
+  Applying courses.0014_course_color_course_created_by_course_domain_and_more...

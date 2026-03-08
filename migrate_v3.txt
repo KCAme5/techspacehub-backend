@@ -1,0 +1,36 @@
+[CELERY] BROKER: redis://default:Wqsvf6rZlnE1ysVp4K5qEBsmX8vQMX5LjJ0JcXyqIBIIYy3NqEVLGrFXFkEPN0D9@hww0skgccwc8k40kookw8kwo:6379/0
+[CELERY] BACKEND: redis://default:Wqsvf6rZlnE1ysVp4K5qEBsmX8vQMX5LjJ0JcXyqIBIIYy3NqEVLGrFXFkEPN0D9@hww0skgccwc8k40kookw8kwo:6379/0
+[Config] Loaded environment from: C:\Users\Chan\Desktop\TechSpaceV2\cybercraft\.env
+[Config] --- REDIS DEBUG START ---
+[Config] env_broker_url: redis://default:Wqsv...
+[Config] REDIS_URL: redis://default:Wqsv...
+[Config] CELERY_BROKER_URL: redis://default:Wqsv...
+[Config] --- REDIS DEBUG END ---
+[Config] Redis connection string determined. Host: 127.0.0.1, Port: 6379
+[Config] Using Authenticated Redis: hww0skgccwc8k40kookw8kwo:6379/0
+Operations to perform:
+  Target specific migration: 0014_course_color_course_created_by_course_domain_and_more, from courses
+Running pre-migrate handlers for application admin
+Running pre-migrate handlers for application auth
+Running pre-migrate handlers for application contenttypes
+Running pre-migrate handlers for application sessions
+Running pre-migrate handlers for application sites
+Running pre-migrate handlers for application authtoken
+Running pre-migrate handlers for application dj_rest_auth
+Running pre-migrate handlers for application allauth
+Running pre-migrate handlers for application account
+Running pre-migrate handlers for application socialaccount
+Running pre-migrate handlers for application accounts
+Running pre-migrate handlers for application courses
+Running pre-migrate handlers for application library
+Running pre-migrate handlers for application dashboard
+Running pre-migrate handlers for application chat
+Running pre-migrate handlers for application labs
+Running pre-migrate handlers for application billing
+Running pre-migrate handlers for application live_classes
+Running pre-migrate handlers for application management
+Running pre-migrate handlers for application services
+Running pre-migrate handlers for application progress
+Running pre-migrate handlers for application payments
+Running migrations:
+  Applying courses.0014_course_color_course_created_by_course_domain_and_more...

@@ -1,0 +1,18 @@
+﻿[CELERY] BROKER: redis://localhost:6379/0
+[CELERY] BACKEND: redis://localhost:6379/0
+[Config] Loaded environment from: C:\Users\Chan\Desktop\TechSpaceV2\cybercraft\.env
+[Config] --- REDIS DEBUG START ---
+[Config] env_broker_url: redis://default:Wqsv...
+[Config] REDIS_URL: redis://default:Wqsv...
+[Config] CELERY_BROKER_URL: redis://default:Wqsv...
+[Config] --- REDIS DEBUG END ---
+[Config] Redis connection string determined. Host: 127.0.0.1, Port: 6379
+[Config] Using Authenticated Redis: hww0skgccwc8k40kookw8kwo:6379/0
+--- TABLE: courses_course ---
+Columns: id, title, slug, description, thumbnail, is_active, created_at, updated_at, category_id, instructor_id
+--- TABLE: courses_lesson ---
+Columns: id, title, slug, content, video_url, duration, order, is_preview, week_id, code_sniplet, pdf_url, lab_config, lab_type
+--- TABLE: courses_level ---
+Table likely does NOT exist.
+--- TABLE: courses_module ---
+Table likely does NOT exist.

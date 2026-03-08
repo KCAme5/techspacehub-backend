@@ -1,0 +1,25 @@
+[CELERY] BROKER: redis://default:Wqsvf6rZlnE1ysVp4K5qEBsmX8vQMX5LjJ0JcXyqIBIIYy3NqEVLGrFXFkEPN0D9@hww0skgccwc8k40kookw8kwo:6379/0
+[CELERY] BACKEND: redis://default:Wqsvf6rZlnE1ysVp4K5qEBsmX8vQMX5LjJ0JcXyqIBIIYy3NqEVLGrFXFkEPN0D9@hww0skgccwc8k40kookw8kwo:6379/0
+[Config] Loaded environment from: C:\Users\Chan\Desktop\TechSpaceV2\cybercraft\.env
+[Config] --- REDIS DEBUG START ---
+[Config] env_broker_url: redis://default:Wqsv...
+[Config] REDIS_URL: redis://default:Wqsv...
+[Config] CELERY_BROKER_URL: redis://default:Wqsv...
+[Config] --- REDIS DEBUG END ---
+[Config] Redis connection string determined. Host: 127.0.0.1, Port: 6379
+[Config] Using Authenticated Redis: hww0skgccwc8k40kookw8kwo:6379/0
+courses
+ [X] 0001_initial
+ [X] 0002_lesson_code_sniplet_lesson_pdf_url
+ [X] 0003_notification_projectfeedback
+ [X] 0004_projectsubmission_submission_file_and_more
+ [X] 0005_alter_projectsubmission_description
+ [X] 0006_weeklyquizsubmission_attempt_number
+ [X] 0007_alter_weeklyquizsubmission_unique_together
+ [X] 0008_alter_course_thumbnail
+ [X] 0009_alter_course_instructor
+ [X] 0010_add_last_accessed_to_enrollment
+ [X] 0011_add_certificates_points_system
+ [X] 0012_alter_course_instructor
+ [X] 0013_lesson_lab_config_lesson_lab_type
+ [ ] 0014_course_color_course_created_by_course_domain_and_more
