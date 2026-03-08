@@ -137,6 +137,7 @@ class LessonStaffSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Lesson
         fields = '__all__'
+        read_only_fields = ['week', 'module', 'slug', 'is_published']
 
 
 class ModuleStaffSerializer(serializers.ModelSerializer):
@@ -149,6 +150,7 @@ class ModuleStaffSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Module
         fields = '__all__'
+        read_only_fields = ['level', 'is_published']
 
 
 class LevelStaffSerializer(serializers.ModelSerializer):
@@ -157,6 +159,7 @@ class LevelStaffSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Level
         fields = '__all__'
+        read_only_fields = ['course', 'slug', 'is_published']
 
 
 class CourseStaffSerializer(serializers.ModelSerializer):
@@ -165,3 +168,5 @@ class CourseStaffSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Course
         fields = '__all__'
+        read_only_fields = ['slug', 'is_published', 'created_by']
+

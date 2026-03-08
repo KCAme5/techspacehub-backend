@@ -124,9 +124,10 @@ class Lesson(models.Model):
         ('lab',     'Full Lab'),
     ]
 
-    week = models.ForeignKey(Week, on_delete=models.CASCADE, related_name="lessons")
+    week = models.ForeignKey(Week, on_delete=models.CASCADE, related_name="lessons", null=True, blank=True)
     title = models.CharField(max_length=200)
-    slug = models.SlugField()
+    slug = models.SlugField(blank=True)
+
     content = models.TextField(blank=True)
     video_url = models.URLField(blank=True)
     pdf_url = models.URLField(blank=True)
