@@ -114,7 +114,24 @@ class StaffCourseListCreateView(generics.ListCreateAPIView):
         return Course.objects.all().prefetch_related('levels')
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        course = serializer.save(created_by=self.request.user)
+        
+        # Auto-generate the 3 default levels as requested
+        default_levels = [
+            {'name': 'Beginner', 'level_type': 'beginner', 'order': 1, 'description': 'Foundational concepts and basics.'},
+            {'name': 'Intermediate', 'level_type': 'intermediate', 'order': 2, 'description': 'Practical applications and intermediate topics.'},
+            {'name': 'Advanced', 'level_type': 'advanced', 'order': 3, 'description': 'Complex scenarios and advanced mastery.'},
+        ]
+        
+        for data in default_levels:
+            Level.objects.create(
+                course=course,
+                name=data['name'],
+                level_type=data['level_type'],
+                order=data['order'],
+                description=data['description'],
+                is_published=True
+            )
 
 
 class StaffCourseDetailView(generics.RetrieveUpdateDestroyAPIView):
