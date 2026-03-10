@@ -12,6 +12,20 @@ from .models import (
 
 
 # ───────────────────────── LEARNER SERIALIZERS ──────────────────────────
+class LevelSimpleSerializer(serializers.ModelSerializer):
+    course_slug = serializers.ReadOnlyField(source='course.slug')
+    class Meta:
+        model = Level
+        fields = ['id', 'name', 'slug', 'course_slug']
+
+
+class ModuleSimpleSerializer(serializers.ModelSerializer):
+    level = LevelSimpleSerializer(read_only=True)
+    class Meta:
+        model = Module
+        fields = ['id', 'title', 'level']
+
+
 class QuizOptionLearnerSerializer(serializers.ModelSerializer):
     """Quiz options shown to learners — NO is_correct included."""
     class Meta:
@@ -36,18 +50,29 @@ class DrillLearnerSerializer(serializers.ModelSerializer):
 
 
 class LessonLearnerSerializer(serializers.ModelSerializer):
-    drills   = DrillLearnerSerializer(many=True, read_only=True)
+    drills = DrillLearnerSerializer(many=True, read_only=True)
     has_quiz = serializers.SerializerMethodField()
+    module = ModuleSimpleSerializer(read_only=True)
+    drills_count = serializers.SerializerMethodField()
+    quiz_count = serializers.SerializerMethodField()
 
     def get_has_quiz(self, obj):
         return hasattr(obj, 'quiz')
 
+    def get_drills_count(self, obj):
+        return obj.drills.count()
+
+    def get_quiz_count(self, obj):
+        # Lesson has a OneToOne with Quiz named 'quiz'
+        return 1 if hasattr(obj, 'quiz') else 0
+
     class Meta:
-        model  = Lesson
+        model = Lesson
         fields = [
             'id', 'title', 'icon', 'order', 'xp_reward', 'lesson_type',
             'theory_html', 'has_lab', 'lab_language', 'starter_code',
             'notebook_filename', 'terminal_commands', 'drills', 'has_quiz',
+            'module', 'drills_count', 'quiz_count',
         ]
 
 

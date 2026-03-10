@@ -39,7 +39,7 @@ def get_level_progress_state(user, level):
         needs_payment  = not is_free and not has_paid
         module_open    = is_accessible and prev_module_complete
 
-        lessons       = module.lessons.filter(is_published=True)
+        lessons = module.lessons.filter(is_published=True).prefetch_related('drills', 'quiz')
         lesson_states = []
         prev_lesson_done     = True
         all_lessons_complete = True
@@ -58,6 +58,8 @@ def get_level_progress_state(user, level):
                 'has_lab':   lesson.has_lab,
                 'unlocked':  is_open,
                 'completed': is_done,
+                'drills_count': lesson.drills.count(),
+                'quiz_count': 1 if hasattr(lesson, 'quiz') else 0,
             })
 
             if not is_done:
