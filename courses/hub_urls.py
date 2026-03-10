@@ -77,4 +77,9 @@ urlpatterns = [
     path('staff/quizzes/<int:pk>/',
          v.StaffQuizDetailView.as_view(),
          name='staff-quiz-detail'),
+    
+    # Media
+    path('staff/media/upload/',
+         v.StaffMediaUploadView.as_view(),
+         name='staff-media-upload'),
 ]

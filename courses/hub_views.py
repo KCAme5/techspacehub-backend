@@ -259,3 +259,39 @@ class StaffQuizDetailView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsAuthenticated, IsStaffUser]
     serializer_class   = QuizStaffSerializer
     queryset           = Quiz.objects.all()
+
+
+from rest_framework.parsers import MultiPartParser, FormParser
+
+class StaffMediaUploadView(APIView):
+    """
+    POST /api/hub/staff/media/upload/
+    Accepts multipart/form-data with a 'file' field.
+    Returns the absolute URL of the uploaded file.
+    """
+    permission_classes = [IsAuthenticated, IsStaffUser]
+    parser_classes    = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        file_obj = request.data.get('file')
+        if not file_obj:
+            return Response({'detail': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Optionally link to a lesson if lesson_id is provided
+        lesson_id = request.data.get('lesson_id')
+        lesson = None
+        if lesson_id:
+            try:
+                lesson = Lesson.objects.get(pk=lesson_id)
+            except Lesson.DoesNotExist:
+                pass
+
+        media = LessonMedia.objects.create(file=file_obj, lesson=lesson)
+        
+        # Construct absolute URL
+        file_url = request.build_absolute_uri(media.file.url)
+        return Response({
+            'id': media.id,
+            'url': file_url,
+            'filename': media.file.name
+        }, status=status.HTTP_201_CREATED)

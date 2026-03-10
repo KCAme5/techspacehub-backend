@@ -966,3 +966,16 @@ class QuizOption(models.Model):
 
     def __str__(self):
         return f"{self.label}: {self.text[:40]}"
+
+
+class LessonMedia(models.Model):
+    """Media files (images, etc) uploaded for use in hub lessons."""
+    lesson      = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name='media', null=True, blank=True)
+    file        = models.FileField(
+        upload_to='hub/lesson_media/',
+        validators=[FileExtensionValidator(allowed_extensions=['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'])]
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Media {self.id} (Lesson {self.lesson_id})"
