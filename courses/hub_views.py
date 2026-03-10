@@ -151,18 +151,16 @@ class HubQuizSubmitView(APIView):
             prog, created = UserLessonProgress.objects.get_or_create(
                 user=request.user, lesson_id=pk
             )
-            if not prog.quiz_completed:
-                prog.quiz_completed = True
+            if not prog.quiz_passed:
+                prog.quiz_passed = True
                 xp_awarded = 50 # Standard quiz XP
-                prog.points_earned += xp_awarded
                 prog.completed = True # Marking lesson as completed too if quiz pass
                 prog.save()
                 
-                # Update total points
-                from progress.models import UserProfile
-                profile, _ = UserProfile.objects.get_or_create(user=request.user)
-                profile.total_points += xp_awarded
-                profile.save()
+                # Update total points on User model directly
+                user = request.user
+                user.total_xp += xp_awarded
+                user.update_rank()
 
         return Response({
             'correct': is_correct,
@@ -182,7 +180,6 @@ class HubLessonCompleteView(APIView):
         except Lesson.DoesNotExist:
             return Response({'detail': 'Lesson not found.'}, status=status.HTTP_404_NOT_FOUND)
 
-        from progress.models import UserLessonProgress, UserProfile
         prog, created = UserLessonProgress.objects.get_or_create(
             user=request.user, lesson=lesson
         )
@@ -191,12 +188,12 @@ class HubLessonCompleteView(APIView):
         if not prog.completed:
             prog.completed = True
             xp_awarded = lesson.xp_reward
-            prog.points_earned += xp_awarded
             prog.save()
-
-            profile, _ = UserProfile.objects.get_or_create(user=request.user)
-            profile.total_points += xp_awarded
-            profile.save()
+            
+            # Update total points on User model directly
+            user = request.user
+            user.total_xp += xp_awarded
+            user.update_rank()
 
         return Response({
             'completed': True,
