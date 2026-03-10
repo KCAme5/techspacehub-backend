@@ -14,9 +14,11 @@ from .models import (
 # ───────────────────────── LEARNER SERIALIZERS ──────────────────────────
 class LevelSimpleSerializer(serializers.ModelSerializer):
     course_slug = serializers.ReadOnlyField(source='course.slug')
+    course_id = serializers.ReadOnlyField(source='course.id')
+    
     class Meta:
         model = Level
-        fields = ['id', 'name', 'slug', 'course_slug']
+        fields = ['id', 'name', 'slug', 'course_slug', 'course_id']
 
 
 class ModuleSimpleSerializer(serializers.ModelSerializer):
@@ -35,11 +37,19 @@ class QuizOptionLearnerSerializer(serializers.ModelSerializer):
 
 class QuizLearnerSerializer(serializers.ModelSerializer):
     """Quiz shown to learners — NO is_correct in options."""
-    options = QuizOptionLearnerSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
 
     class Meta:
         model  = Quiz
-        fields = ['id', 'question', 'explanation', 'options']
+        fields = ['id', 'questions']
+
+    def get_questions(self, obj):
+        return [{
+            'id': obj.id,
+            'question_text': obj.question,
+            'explanation': obj.explanation,
+            'options': QuizOptionLearnerSerializer(obj.options.all(), many=True).data
+        }]
 
 
 class DrillLearnerSerializer(serializers.ModelSerializer):
@@ -57,7 +67,8 @@ class LessonLearnerSerializer(serializers.ModelSerializer):
     quiz_count = serializers.SerializerMethodField()
 
     def get_has_quiz(self, obj):
-        return hasattr(obj, 'quiz')
+        # Lesson has a OneToOneField(Lesson, related_name='quiz')
+        return Quiz.objects.filter(lesson=obj).exists()
 
     def get_drills_count(self, obj):
         return obj.drills.count()
@@ -95,12 +106,13 @@ class LevelSerializer(serializers.ModelSerializer):
 
 class CourseHubSerializer(serializers.ModelSerializer):
     levels = LevelSerializer(many=True, read_only=True)
+    category_name = serializers.ReadOnlyField(source='category.name')
 
     class Meta:
         model  = Course
         fields = [
             'id', 'title', 'slug', 'domain', 'description',
-            'icon', 'color', 'is_published', 'levels',
+            'icon', 'color', 'is_published', 'category_name', 'levels',
         ]
 
 
