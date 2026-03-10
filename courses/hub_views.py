@@ -15,6 +15,7 @@ from .models import Course, Level, Module, Lesson, Drill, DrillAnswer, Quiz, Qui
 from .hub_serializers import (
     CourseHubSerializer, LevelSerializer, ModuleLearnerSerializer,
     LessonLearnerSerializer, DrillLearnerSerializer,
+    QuizLearnerSerializer, QuizOptionLearnerSerializer,
     CourseStaffSerializer, LevelStaffSerializer, ModuleStaffSerializer,
     LessonStaffSerializer, DrillStaffSerializer, QuizStaffSerializer,
 )
@@ -99,6 +100,109 @@ class HubCheckDrillView(APIView):
         ).exists()
 
         return Response({'correct': correct})
+
+
+class HubLessonQuizView(APIView):
+    """GET /api/hub/lessons/<id>/quiz/"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            quiz = Quiz.objects.get(lesson_id=pk)
+        except Quiz.DoesNotExist:
+            return Response({'detail': 'No quiz for this lesson.'}, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response(QuizLearnerSerializer(quiz).data)
+
+
+class HubQuizSubmitView(APIView):
+    """
+    POST /api/hub/lessons/<id>/quiz/submit/
+    Body: { "question_id": 1, "answers": { "question_id": selected_option_id, ... } }
+    Since currently Quiz model is 1 per lesson with multiple options,
+    we'll handle it based on how many questions are actually in the quiz model.
+    Actually the Quiz model seems to be a single question-and-options set.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            quiz = Quiz.objects.get(lesson_id=pk)
+        except Quiz.DoesNotExist:
+            return Response({'detail': 'No quiz for this lesson.'}, status=status.HTTP_404_NOT_FOUND)
+
+        selected_option_id = request.data.get('option_id')
+        if not selected_option_id:
+            # Fallback for the multiple answers format just in case
+            answers = request.data.get('answers', {})
+            selected_option_id = answers.get(str(quiz.id)) or answers.get(quiz.id)
+
+        try:
+            selected_option = QuizOption.objects.get(pk=selected_option_id, quiz=quiz)
+        except QuizOption.DoesNotExist:
+            return Response({'detail': 'Invalid option.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_correct = selected_option.is_correct
+        xp_awarded = 0
+        
+        if is_correct:
+            # Award XP if not already completed
+            from progress.models import UserLessonProgress
+            prog, created = UserLessonProgress.objects.get_or_create(
+                user=request.user, lesson_id=pk
+            )
+            if not prog.quiz_completed:
+                prog.quiz_completed = True
+                xp_awarded = 50 # Standard quiz XP
+                prog.points_earned += xp_awarded
+                prog.completed = True # Marking lesson as completed too if quiz pass
+                prog.save()
+                
+                # Update total points
+                from progress.models import UserProfile
+                profile, _ = UserProfile.objects.get_or_create(user=request.user)
+                profile.total_points += xp_awarded
+                profile.save()
+
+        return Response({
+            'correct': is_correct,
+            'xp_awarded': xp_awarded > 0,
+            'xp_amount': xp_awarded,
+            'explanation': quiz.explanation if is_correct else None
+        })
+
+
+class HubLessonCompleteView(APIView):
+    """POST /api/hub/lessons/<id>/complete/"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            lesson = Lesson.objects.get(pk=pk, is_published=True)
+        except Lesson.DoesNotExist:
+            return Response({'detail': 'Lesson not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from progress.models import UserLessonProgress, UserProfile
+        prog, created = UserLessonProgress.objects.get_or_create(
+            user=request.user, lesson=lesson
+        )
+
+        xp_awarded = 0
+        if not prog.completed:
+            prog.completed = True
+            xp_awarded = lesson.xp_reward
+            prog.points_earned += xp_awarded
+            prog.save()
+
+            profile, _ = UserProfile.objects.get_or_create(user=request.user)
+            profile.total_points += xp_awarded
+            profile.save()
+
+        return Response({
+            'completed': True,
+            'xp_awarded': xp_awarded > 0,
+            'xp_amount': xp_awarded
+        })
 
 
 # ─────────────────────── STAFF VIEWS ─────────────────────────────────────

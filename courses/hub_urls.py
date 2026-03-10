@@ -25,6 +25,15 @@ urlpatterns = [
     path('lessons/<int:pk>/check-drill/',
          v.HubCheckDrillView.as_view(),
          name='check-drill'),
+    path('lessons/<int:pk>/complete/',
+         v.HubLessonCompleteView.as_view(),
+         name='lesson-complete'),
+    path('lessons/<int:pk>/quiz/',
+         v.HubLessonQuizView.as_view(),
+         name='lesson-quiz'),
+    path('lessons/<int:pk>/quiz/submit/',
+         v.HubQuizSubmitView.as_view(),
+         name='quiz-submit'),
 
     # ─── Staff endpoints ──────────────────────────────────────────────────
     # Courses

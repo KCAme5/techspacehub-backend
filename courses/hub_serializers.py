@@ -12,6 +12,21 @@ from .models import (
 
 
 # ───────────────────────── LEARNER SERIALIZERS ──────────────────────────
+class QuizOptionLearnerSerializer(serializers.ModelSerializer):
+    """Quiz options shown to learners — NO is_correct included."""
+    class Meta:
+        model  = QuizOption
+        fields = ['id', 'label', 'text', 'order']
+
+
+class QuizLearnerSerializer(serializers.ModelSerializer):
+    """Quiz shown to learners — NO is_correct in options."""
+    options = QuizOptionLearnerSerializer(many=True, read_only=True)
+
+    class Meta:
+        model  = Quiz
+        fields = ['id', 'question', 'explanation', 'options']
+
 
 class DrillLearnerSerializer(serializers.ModelSerializer):
     """Drills shown to learners — NO answers included."""
