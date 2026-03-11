@@ -107,7 +107,10 @@ INSTALLED_APPS = [
     "progress",
     "payments",
     "staff_dashboard",
+    # AI Website Builder — credit system
+    "builder",
 ]
+
 
 SITE_ID = 1
 

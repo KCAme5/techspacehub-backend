@@ -35,6 +35,8 @@ urlpatterns = [
     path("api/hub/progress/", include("progress.urls")),
     path("api/hub/payments/", include("payments.urls")),
     path("api/hub/staff/", include("staff_dashboard.urls")),
+    # ─── AI Builder — credit system endpoints ────────────────────────────
+    path("api/builder/", include("builder.urls")),
 ]
 
 if settings.DEBUG:
