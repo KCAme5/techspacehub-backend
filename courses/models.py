@@ -668,7 +668,7 @@ class Certificate(models.Model):
             else:
                 final_grade = 0
 
-            return round(final_grade, 2)
+            return float("{:.2f}".format(final_grade))
         except Exception:
             return None
 
@@ -923,8 +923,8 @@ class Drill(models.Model):
     lesson  = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name='drills')
     order   = models.PositiveIntegerField(default=0)
     prompt  = models.CharField(max_length=100, default='$')
-    task    = models.TextField()
-    hint    = models.TextField()
+    task    = models.TextField(blank=True)
+    hint    = models.TextField(blank=True)
 
     class Meta:
         ordering = ['order']
