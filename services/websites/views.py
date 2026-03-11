@@ -13,8 +13,9 @@ class WebsiteOrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         if user.role in ['management', 'staff'] or user.is_staff:
-            # Hide AI sandboxes from management/staff by default
-            return WebsiteOrder.objects.filter(is_ai_sandbox=False)
+            # Hide AI sandboxes from management/staff by default, UNLESS they own it
+            from django.db.models import Q
+            return WebsiteOrder.objects.filter(Q(is_ai_sandbox=False) | Q(client=user))
         return WebsiteOrder.objects.filter(client=user)
 
     def get_permissions(self):
