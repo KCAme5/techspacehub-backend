@@ -461,7 +461,7 @@ function App() {{
   const [count, setCount] = useState(0);
 
   return (
-    <div style={{{ 
+    <div style={{{{ 
       padding: '20px', 
       fontFamily: 'Arial, sans-serif',
       textAlign: 'center',
@@ -470,16 +470,16 @@ function App() {{
       flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'center'
-    }}>
-      <h1 style={{ color: '#333', marginBottom: '20px' }}>
+    }}}}>
+      <h1 style={{{{ color: '#333', marginBottom: '20px' }}}}>
         {prompt[:50]}...
       </h1>
-      <p style={{ fontSize: '18px', marginBottom: '20px' }}>
+      <p style={{{{ fontSize: '18px', marginBottom: '20px' }}}}>
         Count: {{count}}
       </p>
       <button 
-        onClick={{() => setCount(count + 1)}}
-        style={{
+        onClick={{{{() => setCount(count + 1)}}}}
+        style={{{{
           padding: '10px 20px',
           fontSize: '16px',
           backgroundColor: '#007bff',
@@ -487,7 +487,7 @@ function App() {{
           border: 'none',
           borderRadius: '5px',
           cursor: 'pointer'
-        }}
+        }}}}
       >
         Increment
       </button>
