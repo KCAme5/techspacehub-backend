@@ -1,6 +1,7 @@
 """
 builder/views.py — Credit system API views for the AI Website Builder.
 """
+
 import logging
 from django.db import transaction
 from django.db.models import F
@@ -13,24 +14,34 @@ from django.shortcuts import get_object_or_404
 
 from .models import UserCredits, CreditPackage, CreditPayment
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
+from .views import (
+    CreditBalanceView,
+    CreditPackagesView,
+    PurchaseCreditsView,
+    CreditPaymentStatusView,
+    MpesaCreditCallbackView,
+    DeductCreditView,
+    EnhancePromptView,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class CreditBalanceView(APIView):
     """GET /api/builder/credits/balance/ — Return the user's current credit balance."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         credits_obj, _ = UserCredits.objects.get_or_create(
-            user=request.user,
-            defaults={'credits': 20, 'is_free_tier': True}
+            user=request.user, defaults={"credits": 20, "is_free_tier": True}
         )
         return Response(UserCreditsSerializer(credits_obj).data)
 
 
 class CreditPackagesView(APIView):
     """GET /api/builder/credits/packages/ — Return available credit packages."""
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -44,24 +55,25 @@ class PurchaseCreditsView(APIView):
     Body: { package_id, phone_number }
     Creates a pending CreditPayment and initiates an M-Pesa STK push.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        package_id   = request.data.get('package_id')
-        phone_number = request.data.get('phone_number', '').strip()
+        package_id = request.data.get("package_id")
+        phone_number = request.data.get("phone_number", "").strip()
 
         if not package_id or not phone_number:
             return Response(
-                {'error': 'package_id and phone_number are required.'},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "package_id and phone_number are required."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         package = get_object_or_404(CreditPackage, id=package_id, is_active=True)
 
         # Normalize phone: ensure it starts with 2547
-        if phone_number.startswith('0'):
-            phone_number = '254' + phone_number[1:]
-        elif phone_number.startswith('+'):
+        if phone_number.startswith("0"):
+            phone_number = "254" + phone_number[1:]
+        elif phone_number.startswith("+"):
             phone_number = phone_number[1:]
 
         # Create pending payment record
@@ -71,38 +83,47 @@ class PurchaseCreditsView(APIView):
             amount=package.price_kes,
             credits=package.credits,
             phone_number=phone_number,
-            status='pending',
+            status="pending",
         )
 
         # Initiate M-Pesa STK push
         try:
             from payments.services import initiate_stk_push
+
             result = initiate_stk_push(
                 phone=phone_number,
                 amount=int(package.price_kes),
-                ref=f'CREDITS-{str(payment.id)[:8].upper()}',
-                description=f'TechSpaceHub {package.credits} AI Credits',
+                ref=f"CREDITS-{str(payment.id)[:8].upper()}",
+                description=f"TechSpaceHub {package.credits} AI Credits",
             )
             logger.info(f"M-Pesa STK result for payment {payment.id}: {result}")
 
-            if 'CheckoutRequestID' in result:
-                payment.mpesa_checkout_id = result['CheckoutRequestID']
+            if "CheckoutRequestID" in result:
+                payment.mpesa_checkout_id = result["CheckoutRequestID"]
                 payment.save()
-                return Response({
-                    'payment_id': str(payment.id),
-                    'message': 'STK push sent. Check your phone.',
-                })
+                return Response(
+                    {
+                        "payment_id": str(payment.id),
+                        "message": "STK push sent. Check your phone.",
+                    }
+                )
             else:
-                payment.status = 'failed'
+                payment.status = "failed"
                 payment.save()
-                error_msg = result.get('errorMessage') or result.get('CustomerMessage') or 'M-Pesa initiation failed'
-                return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+                error_msg = (
+                    result.get("errorMessage")
+                    or result.get("CustomerMessage")
+                    or "M-Pesa initiation failed"
+                )
+                return Response(
+                    {"error": error_msg}, status=status.HTTP_400_BAD_REQUEST
+                )
 
         except Exception as e:
             logger.error(f"STK push error for payment {payment.id}: {e}")
-            payment.status = 'failed'
+            payment.status = "failed"
             payment.save()
-            return Response({'error': str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class CreditPaymentStatusView(APIView):
@@ -110,20 +131,21 @@ class CreditPaymentStatusView(APIView):
     GET /api/builder/credits/payment-status/<payment_id>/
     Frontend polls this every 3 seconds to know if payment succeeded.
     """
+
     permission_classes = [IsAuthenticated]
 
     def get(self, request, payment_id):
         payment = get_object_or_404(CreditPayment, id=payment_id, user=request.user)
         data = {
-            'status': payment.status,
-            'credits': 0,
+            "status": payment.status,
+            "credits": 0,
         }
-        if payment.status == 'completed':
+        if payment.status == "completed":
             # Also return the user's new credit balance
             try:
-                data['credits'] = request.user.ai_credits.credits
+                data["credits"] = request.user.ai_credits.credits
             except UserCredits.DoesNotExist:
-                data['credits'] = payment.credits
+                data["credits"] = payment.credits
         return Response(data)
 
 
@@ -133,55 +155,61 @@ class MpesaCreditCallbackView(APIView):
     Called by Safaricom upon payment completion/failure.
     This is AllowAny — no JWT, Safaricom doesn't send auth.
     """
+
     permission_classes = [AllowAny]
 
     def post(self, request):
-        data        = request.data
-        stk         = data.get('Body', {}).get('stkCallback', {})
-        checkout_id = stk.get('CheckoutRequestID', '')
-        result_code = str(stk.get('ResultCode', ''))
+        data = request.data
+        stk = data.get("Body", {}).get("stkCallback", {})
+        checkout_id = stk.get("CheckoutRequestID", "")
+        result_code = str(stk.get("ResultCode", ""))
 
-        logger.info(f"M-Pesa Credit Callback: checkout_id={checkout_id}, result_code={result_code}")
+        logger.info(
+            f"M-Pesa Credit Callback: checkout_id={checkout_id}, result_code={result_code}"
+        )
 
         try:
             payment = CreditPayment.objects.get(mpesa_checkout_id=checkout_id)
         except CreditPayment.DoesNotExist:
             logger.warning(f"No CreditPayment found for checkout_id: {checkout_id}")
-            return Response({'status': 'ignored'})
+            return Response({"status": "ignored"})
 
-        if payment.status == 'completed':
+        if payment.status == "completed":
             # Idempotency — already processed
-            return Response({'status': 'ok'})
+            return Response({"status": "ok"})
 
-        if result_code == '0':
+        if result_code == "0":
             # Extract receipt number
-            items = stk.get('CallbackMetadata', {}).get('Item', [])
+            items = stk.get("CallbackMetadata", {}).get("Item", [])
             for item in items:
-                if item.get('Name') == 'MpesaReceiptNumber':
-                    payment.mpesa_receipt = str(item.get('Value', ''))
+                if item.get("Name") == "MpesaReceiptNumber":
+                    payment.mpesa_receipt = str(item.get("Value", ""))
 
             with transaction.atomic():
-                payment.status       = 'completed'
+                payment.status = "completed"
                 payment.completed_at = timezone.now()
                 payment.save()
 
                 # Atomically add credits to user's balance
                 user_credits, _ = UserCredits.objects.get_or_create(
-                    user=payment.user,
-                    defaults={'credits': 0, 'is_free_tier': True}
+                    user=payment.user, defaults={"credits": 0, "is_free_tier": True}
                 )
                 UserCredits.objects.filter(pk=user_credits.pk).update(
-                    credits=F('credits') + payment.credits,
-                    total_purchased=F('total_purchased') + payment.credits,
+                    credits=F("credits") + payment.credits,
+                    total_purchased=F("total_purchased") + payment.credits,
                     is_free_tier=False,
                 )
-                logger.info(f"Granted {payment.credits} credits to {payment.user.username}")
+                logger.info(
+                    f"Granted {payment.credits} credits to {payment.user.username}"
+                )
         else:
-            payment.status = 'failed'
+            payment.status = "failed"
             payment.save()
-            logger.warning(f"M-Pesa payment failed for {payment.user.username}: {stk.get('ResultDesc', '')}")
+            logger.warning(
+                f"M-Pesa payment failed for {payment.user.username}: {stk.get('ResultDesc', '')}"
+            )
 
-        return Response({'status': 'ok'})
+        return Response({"status": "ok"})
 
 
 class DeductCreditView(APIView):
@@ -189,17 +217,87 @@ class DeductCreditView(APIView):
     POST /api/builder/credits/deduct/
     Called internally after a successful AI generation to record credit usage.
     """
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         try:
             with transaction.atomic():
-                credits_obj = UserCredits.objects.select_for_update().get(user=request.user)
+                credits_obj = UserCredits.objects.select_for_update().get(
+                    user=request.user
+                )
                 if credits_obj.credits <= 0:
-                    return Response({'error': 'Not enough credits.'}, status=status.HTTP_402_PAYMENT_REQUIRED)
-                credits_obj.credits   -= 1
+                    return Response(
+                        {"error": "Not enough credits."},
+                        status=status.HTTP_402_PAYMENT_REQUIRED,
+                    )
+                credits_obj.credits -= 1
                 credits_obj.total_used += 1
                 credits_obj.save()
-                return Response({'credits': credits_obj.credits})
+                return Response({"credits": credits_obj.credits})
         except UserCredits.DoesNotExist:
-            return Response({'error': 'No credit account found.'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"error": "No credit account found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class EnhancePromptView(APIView):
+    """
+    POST /api/builder/enhance-prompt/
+    Free feature to enhance user prompts without consuming credits.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        prompt = request.data.get("prompt", "").strip()
+
+        if not prompt:
+            return Response(
+                {"error": "Prompt is required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Simple enhancement logic (can be replaced with AI service later)
+        enhanced = self._enhance_prompt_locally(prompt)
+
+        return Response(
+            {
+                "original_prompt": prompt,
+                "enhanced_prompt": enhanced,
+                "message": "Prompt enhanced successfully.",
+            }
+        )
+
+    def _enhance_prompt_locally(self, prompt):
+        """Client-side enhancement logic as fallback"""
+        enhanced = prompt
+
+        # Add specificity if missing
+        prompt_lower = prompt.lower()
+
+        if not any(
+            word in prompt_lower for word in ["responsive", "mobile", "devices"]
+        ):
+            enhanced += "\n\nMake it fully responsive for all devices (mobile, tablet, desktop)."
+
+        if not any(
+            word in prompt_lower for word in ["modern", "contemporary", "current"]
+        ):
+            enhanced += "\n\nUse modern design principles and best practices."
+
+        if not any(word in prompt_lower for word in ["color", "colors", "palette"]):
+            enhanced += "\n\nInclude a cohesive color scheme with proper contrast."
+
+        if not any(
+            word in prompt_lower for word in ["user experience", "ux", "user-friendly"]
+        ):
+            enhanced += (
+                "\n\nFocus on excellent user experience and intuitive navigation."
+            )
+
+        if not any(
+            word in prompt_lower for word in ["performance", "fast", "optimized"]
+        ):
+            enhanced += "\n\nEnsure fast loading and optimal performance."
+
+        return enhanced.strip()
