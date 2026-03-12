@@ -14,15 +14,6 @@ from django.shortcuts import get_object_or_404
 
 from .models import UserCredits, CreditPackage, CreditPayment
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
-from .views import (
-    CreditBalanceView,
-    CreditPackagesView,
-    PurchaseCreditsView,
-    CreditPaymentStatusView,
-    MpesaCreditCallbackView,
-    DeductCreditView,
-    EnhancePromptView,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +24,43 @@ class CreditBalanceView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        credits_obj, _ = UserCredits.objects.get_or_create(
-            user=request.user, defaults={"credits": 20, "is_free_tier": True}
-        )
-        return Response(UserCreditsSerializer(credits_obj).data)
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"Fetching credits for user {request.user.username}")
+
+        try:
+            credits_obj, created = UserCredits.objects.get_or_create(
+                user=request.user,
+                defaults={
+                    "credits": 20,
+                    "total_purchased": 0,
+                    "total_used": 0,
+                    "is_free_tier": True,
+                },
+            )
+
+            if created:
+                logger.info(
+                    f"Created new credits record for {request.user.username} with 20 credits"
+                )
+            else:
+                logger.info(
+                    f"Found existing credits for {request.user.username}: {credits_obj.credits} credits"
+                )
+
+            serializer_data = UserCreditsSerializer(credits_obj).data
+            logger.info(f"Returning credit data: {serializer_data}")
+
+            return Response(serializer_data)
+
+        except Exception as e:
+            logger.error(f"Error fetching credits for {request.user.username}: {e}")
+            return Response(
+                {"error": "Failed to fetch credit balance"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class CreditPackagesView(APIView):
