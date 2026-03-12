@@ -325,3 +325,287 @@ class EnhancePromptView(APIView):
             enhanced += "\n\nEnsure fast loading and optimal performance."
 
         return enhanced.strip()
+
+
+class GenerateView(APIView):
+    """POST /api/builder/generate/ — Stream AI generation with Server-Sent Events"""
+    
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        prompt = request.data.get('prompt', '').strip()
+        output_type = request.data.get('output_type', 'html')
+        style_preset = request.data.get('style_preset', '')
+        
+        # Validate prompt
+        if not prompt:
+            return Response(
+                {'error': 'Prompt is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(prompt) < 10:
+            return Response(
+                {'error': 'Prompt must be at least 10 characters'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if len(prompt) > 1000:
+            return Response(
+                {'error': 'Prompt must be less than 1000 characters'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check credits
+        try:
+            user_credits = UserCredits.objects.get(user=request.user)
+            if user_credits.credits <= 0:
+                return Response(
+                    {'error': 'NO_CREDITS'},
+                    status=status.HTTP_402_PAYMENT_REQUIRED
+                )
+        except UserCredits.DoesNotExist:
+            return Response(
+                {'error': 'NO_CREDITS'},
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
+
+        # AI Model Selection
+        selected_model = request.data.get('model', 'llama') # Default to llama
+        
+        # Deduct credit first
+        with transaction.atomic():
+            UserCredits.objects.filter(user=request.user).update(
+                credits=F('credits') - 1,
+                total_used=F('total_used') + 1
+            )
+
+        # Create session
+        session = GenerationSession.objects.create(
+            user=request.user,
+            prompt=prompt,
+            output_type=output_type,
+            style_preset=style_preset,
+            status='generating',
+            credits_used=1
+        )
+
+        def stream_response():
+            """Stream the generation response from the selected AI model"""
+            try:
+                from .ai import GroqBuilderClient, GeminiBuilderClient
+                import json
+                
+                if selected_model == 'gemini':
+                    client = GeminiBuilderClient()
+                else:
+                    client = GroqBuilderClient()
+                
+                full_raw_text = ""
+                
+                # Start initial progress
+                yield f'data: {json.dumps({"progress": "Initializing Forge..."})}\n\n'
+                
+                for chunk in client.stream_generation(prompt):
+                    # Check if it's an error from the client
+                    if isinstance(chunk, str) and '"error"' in chunk:
+                        yield chunk
+                        break
+                        
+                    full_raw_text += chunk
+                    # We can't easily parse partial files during stream for now, 
+                    # so we just send the raw chunks for the frontend to show.
+                    yield f'data: {json.dumps({"chunk": chunk})}\n\n'
+                
+                # Finalize
+                files = client.parse_multi_file_output(full_raw_text)
+                explanation = f"Generated using {selected_model.capitalize()} based on your prompt."
+                
+                yield f'data: {json.dumps({"done": True, "files": files, "explanation": explanation, "session_id": str(session.id)})}\n\n'
+                
+                # Update session
+                session.files = files
+                session.explanation = explanation
+                session.status = 'done'
+                session.raw_response = full_raw_text
+                session.save()
+                
+            except Exception as e:
+                logger.error(f"Generation error for user {request.user.username}: {e}")
+                session.status = 'error'
+                session.save()
+                
+                # Send error response
+                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+
+        return Response(
+            stream_response(),
+            content_type='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'Connection': 'keep-alive',
+                'Access-Control-Allow-Origin': '*',
+            }
+        )
+
+    def _get_mock_response(self, prompt, output_type, style_preset):
+        """Generate mock response for testing - replace with actual Groq API"""
+        if output_type == 'react':
+            return {
+                "files": [
+                    {
+                        "name": "App.jsx",
+                        "content": f"""import React, {{ useState }} from 'react';
+
+function App() {{
+  const [count, setCount] = useState(0);
+
+  return (
+    <div style={{{ 
+      padding: '20px', 
+      fontFamily: 'Arial, sans-serif',
+      textAlign: 'center',
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center'
+    }}>
+      <h1 style={{ color: '#333', marginBottom: '20px' }}>
+        {prompt[:50]}...
+      </h1>
+      <p style={{ fontSize: '18px', marginBottom: '20px' }}>
+        Count: {{count}}
+      </p>
+      <button 
+        onClick={{() => setCount(count + 1)}}
+        style={{
+          padding: '10px 20px',
+          fontSize: '16px',
+          backgroundColor: '#007bff',
+          color: 'white',
+          border: 'none',
+          borderRadius: '5px',
+          cursor: 'pointer'
+        }}
+      >
+        Increment
+      </button>
+    </div>
+  );
+}}
+
+export default App;"""
+                    },
+                    {
+                        "name": "style.css",
+                        "content": """/* Generated styles */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}"""
+                    }
+                ],
+                "explanation": f"Created a React component based on: {prompt[:100]}... The component uses useState for interactivity and includes responsive styling."
+            }
+        else:
+            return {
+                "files": [
+                    {
+                        "name": "index.html",
+                        "content": f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{prompt[:50]}...</title>
+</head>
+<body>
+    <div style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+        <h1 style="color: #333;">{prompt[:50]}...</h1>
+        <p style="font-size: 18px; color: #666;">Generated website</p>
+        <button onclick="alert('Hello!')" style="padding: 10px 20px; font-size: 16px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+            Click Me
+        </button>
+    </div>
+</body>
+</html>"""
+                    },
+                    {
+                        "name": "style.css",
+                        "content": """/* Generated styles */
+body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+}
+
+* {
+    box-sizing: border-box;
+}"""
+                    },
+                    {
+                        "name": "script.js",
+                        "content": """// Generated JavaScript
+console.log('Website loaded!');
+
+// Add some interactivity
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('DOM fully loaded');
+});"""
+                    }
+                ],
+                "explanation": f"Created a responsive HTML page based on: {prompt[:100]}... The page includes semantic HTML5 structure, modern CSS with gradients, and interactive JavaScript."
+            }
+
+
+class SessionListView(APIView):
+    """GET /api/builder/sessions/ — List user's generation sessions"""
+    
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        sessions = GenerationSession.objects.filter(user=request.user)[:20]  # Last 20 sessions
+        from .serializers import GenerationSessionSerializer
+        return Response(GenerationSessionSerializer(sessions, many=True).data)
+
+
+class SessionDetailView(APIView):
+    """GET /api/builder/sessions/<id>/ — Get specific session"""
+    
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        try:
+            session = GenerationSession.objects.get(id=session_id, user=request.user)
+            from .serializers import GenerationSessionSerializer
+            return Response(GenerationSessionSerializer(session).data)
+        except GenerationSession.DoesNotExist:
+            return Response(
+                {'error': 'Session not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class DeleteSessionView(APIView):
+    """DELETE /api/builder/sessions/<id>/ — Delete a session"""
+    
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, session_id):
+        try:
+            session = GenerationSession.objects.get(id=session_id, user=request.user)
+            session.delete()
+            return Response({'success': True})
+        except GenerationSession.DoesNotExist:
+            return Response(
+                {'error': 'Session not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )

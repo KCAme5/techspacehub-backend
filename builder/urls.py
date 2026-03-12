@@ -11,6 +11,10 @@ from .views import (
     MpesaCreditCallbackView,
     DeductCreditView,
     EnhancePromptView,
+    GenerateView,
+    SessionListView,
+    SessionDetailView,
+    DeleteSessionView,
 )
 
 urlpatterns = [
@@ -29,4 +33,17 @@ urlpatterns = [
     ),
     path("credits/deduct/", DeductCreditView.as_view(), name="credit-deduct"),
     path("enhance-prompt/", EnhancePromptView.as_view(), name="enhance-prompt"),
+    # Generation and session endpoints
+    path("generate/", GenerateView.as_view(), name="generate"),
+    path("sessions/", SessionListView.as_view(), name="session-list"),
+    path(
+        "sessions/<uuid:session_id>/",
+        SessionDetailView.as_view(),
+        name="session-detail",
+    ),
+    path(
+        "sessions/<uuid:session_id>/delete/",
+        DeleteSessionView.as_view(),
+        name="session-delete",
+    ),
 ]
