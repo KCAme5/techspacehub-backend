@@ -263,7 +263,8 @@ class DeductCreditView(APIView):
 class EnhancePromptView(APIView):
     """
     POST /api/builder/enhance-prompt/
-    Free feature — enhances user prompts without consuming credits.
+    Uses AI to rewrite and improve the user's prompt.
+    Free — does not consume credits.
     """
 
     permission_classes = [IsAuthenticated]
@@ -276,34 +277,64 @@ class EnhancePromptView(APIView):
                 {"error": "Prompt is required."}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        enhanced = self._enhance_prompt_locally(prompt)
-
-        return Response(
-            {
+        try:
+            client = GroqBuilderClient(model='llama')
+            enhanced = self._ai_enhance(client, prompt)
+            return Response({
                 "original_prompt": prompt,
                 "enhanced_prompt": enhanced,
                 "message": "Prompt enhanced successfully.",
-            }
+            })
+        except Exception as e:
+            logger.error(f"Enhance prompt error: {e}")
+            # Fallback to local enhancement if AI fails
+            return Response({
+                "original_prompt": prompt,
+                "enhanced_prompt": self._local_enhance(prompt),
+                "message": "Prompt enhanced.",
+            })
+
+    def _ai_enhance(self, client, prompt: str) -> str:
+        """Use Groq to rewrite the prompt into a detailed, specific instruction."""
+        if not client.client:
+            return self._local_enhance(prompt)
+
+        system = (
+            "You are a prompt engineer. Rewrite the user's website prompt into a "
+            "detailed, specific, professional instruction for an AI website builder. "
+            "Keep the core idea but add: specific sections to include, color scheme suggestions, "
+            "content details, interaction patterns. "
+            "Return ONLY the improved prompt text. No explanation. No preamble. Just the prompt."
         )
 
-    def _enhance_prompt_locally(self, prompt):
-        enhanced    = prompt
+        try:
+            response = client.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": f"Enhance this prompt: {prompt}"},
+                ],
+                model=client.model,
+                temperature=0.5,
+                max_tokens=500,
+                stream=False,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception:
+            return self._local_enhance(prompt)
+
+    def _local_enhance(self, prompt: str) -> str:
+        """Fallback enhancement without AI."""
+        enhanced     = prompt
         prompt_lower = prompt.lower()
 
-        if not any(word in prompt_lower for word in ["responsive", "mobile", "devices"]):
-            enhanced += "\n\nMake it fully responsive for all devices (mobile, tablet, desktop)."
-
-        if not any(word in prompt_lower for word in ["modern", "contemporary", "current"]):
-            enhanced += "\n\nUse modern design principles and best practices."
-
-        if not any(word in prompt_lower for word in ["color", "colors", "palette"]):
-            enhanced += "\n\nInclude a cohesive color scheme with proper contrast."
-
-        if not any(word in prompt_lower for word in ["user experience", "ux", "user-friendly"]):
-            enhanced += "\n\nFocus on excellent user experience and intuitive navigation."
-
-        if not any(word in prompt_lower for word in ["performance", "fast", "optimized"]):
-            enhanced += "\n\nEnsure fast loading and optimal performance."
+        if not any(w in prompt_lower for w in ["responsive", "mobile"]):
+            enhanced += "\n\nMust be fully responsive for mobile, tablet, and desktop."
+        if not any(w in prompt_lower for w in ["color", "colors", "theme"]):
+            enhanced += "\n\nUse a modern, cohesive color scheme with high contrast."
+        if not any(w in prompt_lower for w in ["navigation", "navbar", "menu"]):
+            enhanced += "\n\nInclude a clean navigation bar with smooth scroll to sections."
+        if not any(w in prompt_lower for w in ["image", "photo", "visual"]):
+            enhanced += "\n\nInclude relevant images using real Unsplash photo URLs."
 
         return enhanced.strip()
 
@@ -348,6 +379,10 @@ class GenerateView(APIView):
                 total_used=F('total_used') + 1
             )
 
+        # ── Existing files — edit mode ────────────────────────────────────────
+        # Frontend sends current files when user is editing an existing project
+        existing_files = request.data.get('existing_files', None)
+
         # ── Create session record ─────────────────────────────────────────────
         session = GenerationSession.objects.create(
             user=request.user,
@@ -361,23 +396,18 @@ class GenerateView(APIView):
         # ── SSE generator ─────────────────────────────────────────────────────
         def stream_response():
             try:
-                # Select AI client
                 if selected_model == 'gemini':
                     client = GeminiBuilderClient()
                 else:
-                    # Handles 'llama', 'deepseek', or any specific model string
                     client = GroqBuilderClient(model=selected_model)
 
                 full_raw_text = ""
 
-                # ── stream_generation() now yields fully-formed SSE strings:
-                #    data: {"progress": "..."}\n\n
-                #    data: {"chunk": "..."}\n\n
-                #    data: {"done": true, "files": [...]}\n\n
-                #    data: {"error": "..."}\n\n
-                #
-                #    We yield each line DIRECTLY — no re-wrapping.
-                for sse_line in client.stream_generation(prompt):
+                for sse_line in client.stream_generation(
+                    prompt,
+                    existing_files=existing_files,
+                    output_type=output_type,
+                ):
 
                     # Accumulate raw text from chunk events so we can save
                     # the full response to the session after streaming ends.
