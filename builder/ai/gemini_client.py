@@ -12,10 +12,11 @@ class GeminiBuilderClient(BaseWebsiteGenerator):
     Uses REST API to avoid library dependency issues.
     """
 
-    def __init__(self, model="gemini-1.5-flash"):
+    def __init__(self, model="gemini-1.5-flash-latest"):
         self.api_key = os.environ.get("GEMINI_API_KEY")
         self.model = model
-        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={self.api_key}"
+        # Using v1 stable endpoint
+        self.url = f"https://generativelanguage.googleapis.com/v1/models/{model}:streamGenerateContent?alt=sse&key={self.api_key}"
 
     def stream_generation(self, prompt: str):
         if not self.api_key:
