@@ -7,7 +7,11 @@ import base64
 import requests
 from datetime import datetime
 from django.conf import settings
+import logging
+from django.conf import settings
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 def get_access_token():
@@ -18,7 +22,11 @@ def get_access_token():
         auth=(settings.MPESA_CONSUMER_KEY, settings.MPESA_CONSUMER_SECRET),
         timeout=30,
     )
-    return r.json()['access_token']
+    try:
+        return r.json()['access_token']
+    except Exception as e:
+        logger.error(f"M-Pesa Token Error: {e}. Status: {r.status_code}. Content: {r.text[:500]}")
+        raise Exception(f"Failed to get M-Pesa access token: {r.status_code}")
 
 
 def generate_password():
@@ -55,7 +63,12 @@ def initiate_stk_push(phone, amount, ref, description):
     }
     headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
     r       = requests.post(url, json=payload, headers=headers, timeout=30)
-    return r.json()
+    
+    try:
+        return r.json()
+    except Exception as e:
+        logger.error(f"M-Pesa STK JSON Error: {e}. Status: {r.status_code}. Content: {r.text[:500]}")
+        return {"error": f"Gateway Error {r.status_code}", "raw": r.text[:100]}
 
 
 def handle_callback(data):

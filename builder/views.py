@@ -394,7 +394,8 @@ class GenerateView(APIView):
                 if selected_model == 'gemini':
                     client = GeminiBuilderClient()
                 else:
-                    client = GroqBuilderClient()
+                    # Pass the model name (llama, deepseek, or specific ID)
+                    client = GroqBuilderClient(model=selected_model)
                 
                 full_raw_text = ""
                 

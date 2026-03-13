@@ -10,9 +10,17 @@ class GroqBuilderClient(BaseWebsiteGenerator):
     Client wrapper for Groq AI for the builder app.
     """
 
-    def __init__(self, model="llama-3.1-70b-versatile"):
+    def __init__(self, model="llama-3.3-70b-versatile"):
         self.api_key = os.environ.get("LLAMA_API_KEY")
-        self.model = model
+        
+        # Handle aliases or specific model requests
+        if model == 'llama':
+            self.model = "llama-3.3-70b-versatile"
+        elif model == 'deepseek':
+            self.model = "deepseek-r1-distill-llama-70b"
+        else:
+            self.model = model
+            
         self.client = Groq(api_key=self.api_key) if self.api_key else None
 
     def stream_generation(self, prompt: str):
