@@ -1,7 +1,4 @@
-"""
-builder/views.py — Credit system API views for the AI Website Builder.
-"""
-
+import json
 import logging
 from django.db import transaction
 from django.db.models import F
@@ -12,8 +9,9 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
-from .models import UserCredits, CreditPackage, CreditPayment
+from .models import UserCredits, CreditPackage, CreditPayment, GenerationSession
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
+from .ai import GroqBuilderClient, GeminiBuilderClient
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +22,6 @@ class CreditBalanceView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         logger.info(f"Fetching credits for user {request.user.username}")
 
         try:
@@ -114,10 +108,13 @@ class PurchaseCreditsView(APIView):
         try:
             from payments.services import initiate_stk_push
 
+            # Cast to string explicitly for IDE type checking
+            payment_id_str = str(payment.id)
+            payment_ref_suffix = payment_id_str[:8].upper()
             result = initiate_stk_push(
                 phone=phone_number,
                 amount=int(package.price_kes),
-                ref=f"CREDITS-{str(payment.id)[:8].upper()}",
+                ref=f"CREDITS-{payment_ref_suffix}",
                 description=f"TechSpaceHub {package.credits} AI Credits",
             )
             logger.info(f"M-Pesa STK result for payment {payment.id}: {result}")
@@ -393,8 +390,6 @@ class GenerateView(APIView):
         def stream_response():
             """Stream the generation response from the selected AI model"""
             try:
-                from .ai import GroqBuilderClient, GeminiBuilderClient
-                import json
                 
                 if selected_model == 'gemini':
                     client = GeminiBuilderClient()
@@ -419,7 +414,8 @@ class GenerateView(APIView):
                 
                 # Finalize
                 files = client.parse_multi_file_output(full_raw_text)
-                explanation = f"Generated using {selected_model.capitalize()} based on your prompt."
+                model_name = str(selected_model)  # Explicit cast for linting
+                explanation = f"Generated using {model_name.capitalize()} based on your prompt."
                 
                 yield f'data: {json.dumps({"done": True, "files": files, "explanation": explanation, "session_id": str(session.id)})}\n\n'
                 
