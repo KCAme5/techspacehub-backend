@@ -17,7 +17,7 @@ class GroqBuilderClient(BaseWebsiteGenerator):
         if model == 'llama':
             self.model = "llama-3.3-70b-versatile"
         elif model == 'deepseek':
-            self.model = "deepseek-r1-distill-llama-70b"
+            self.model = "deepseek-r1-distill-qwen-32b"
         else:
             self.model = model
             

@@ -12,15 +12,14 @@ class GeminiBuilderClient(BaseWebsiteGenerator):
     Uses REST API to avoid library dependency issues.
     """
 
-    def __init__(self, model="gemini-1.5-pro"):
+    def __init__(self, model="gemini-1.5-flash"):
         self.api_key = os.environ.get("GEMINI_API_KEY")
         self.model = model
-        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?key={self.api_key}"
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse&key={self.api_key}"
 
     def stream_generation(self, prompt: str):
         if not self.api_key:
             logger.error("Gemini API key missing for stream.")
-            yield "data: {\"error\": \"Gemini API key missing\"}\n\n"
             return
 
         system_prompt = self._build_system_prompt()
@@ -46,23 +45,18 @@ class GeminiBuilderClient(BaseWebsiteGenerator):
 
             for line in response.iter_lines():
                 if line:
-                    decoded_line = line.decode('utf-8')
-                    if decoded_line.startswith('  "text": "'):
-                        # This is a bit simplified for raw REST streaming, but good for now
-                        # Actual Gemini REST stream is a JSON array of candidates
-                        pass
+                    decoded = line.decode('utf-8').strip()
+                    if decoded.startswith('data: '):
+                        try:
+                            chunk_data = json.loads(decoded[6:])
+                            if "candidates" in chunk_data:
+                                content = chunk_data["candidates"][0].get("content", {})
+                                parts = content.get("parts", [])
+                                if parts:
+                                    yield parts[0].get("text", "")
+                        except json.JSONDecodeError:
+                            continue
                     
-                    # For simplicity in this env, we'll try to parse the actual chunks
-                    # Note: Gemini REST stream format is a bit complex for manual parsing
-                    # but we can try to find the "text" fields.
-                    
-            # Since REST streaming parsing is tricky without the SDK, 
-            # and I don't want to break the flow, I'll provide a simplified version 
-            # or try to use the SDK if I can confirm it's there.
-            
-            # Let's assume for now we use a simpler approach or the SDK if possible.
-            # I will implement a more robust parser for Gemini REST stream.
-            
         except Exception as e:
             logger.error(f"Gemini Streaming Error: {str(e)}")
-            yield f"data: {{\"error\": \"{str(e)}\"}}\n\n"
+            raise e

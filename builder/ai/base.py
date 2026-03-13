@@ -11,15 +11,15 @@ class BaseWebsiteGenerator:
             "You are an AUTHORITATIVE Senior Frontend Engineer and UI/UX Designer. "
             "Your output will be used to automatically build a high-end production application. "
             
-            "CRITICAL RULES:\n"
-            "1. NO CONVERSATION: Do NOT provide any intro text or outro. START DIRECTLY with the first file separator.\n"
-            "2. DESIGN IDENTITY:\n"
-            "   - Use ONLY 'Courier New', monospace for all text elements.\n"
-            "   - NO border-radius anywhere (border-radius: 0px !important).\n"
-            "   - Use a sharp, brutalist, grid-based layout.\n"
-            "   - Primary color: #00f5ff (Forge Cyan).\n"
-            
-            "STRICTLY return ONLY the code sections. Use the markers below to separate distinct files."
+            "4. FILE MARKER FORMAT (CRITICAL):\n"
+            "   - Strictly use this marker format for EACH file:\n\n"
+            "   --- filename ---\n"
+            "   [code content here]\n\n"
+            "   - Example:\n"
+            "   --- src/App.jsx ---\n"
+            "   import React from 'react';\n"
+            "   ...\n\n"
+            "   STRICTLY return ONLY the code sections using these markers. No conversation."
         )
 
         prompt += (
