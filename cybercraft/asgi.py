@@ -9,13 +9,11 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cybercraft.settings")
 # Setup Django BEFORE importing routing modules
 django.setup()
 
-import services.websites.routing
-
 application = ProtocolTypeRouter(
     {
         "http": get_asgi_application(),
         "websocket": AuthMiddlewareStack(
-            URLRouter(services.websites.routing.websocket_urlpatterns)
+            URLRouter([])
         ),
     }
 )

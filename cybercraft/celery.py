@@ -9,8 +9,6 @@ app = Celery("cybercraft")
 
 app.autodiscover_tasks(
     [
-        "services.websites.tasks",
-        "services.websites.cleanup_tasks",
         "services.audits.tasks",
     ]
 )
