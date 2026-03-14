@@ -59,5 +59,5 @@ urlpatterns = [
         PushToGithubView.as_view(),
         name="session-push-github",
     ),
-    path('api/builder/proxy/image/', ImageProxyView.as_view()),
+    path('proxy/image/', ImageProxyView.as_view()),
 ]
