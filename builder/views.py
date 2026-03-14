@@ -1,5 +1,8 @@
 import json
 import logging
+import io
+import zipfile
+import base64
 from django.db import transaction
 from django.db.models import F
 from django.http import StreamingHttpResponse
@@ -16,7 +19,9 @@ from .ai import GroqBuilderClient, GeminiBuilderClient
 from .ai.stepfun_client import OpenRouterBuilderClient
 from payments.services import initiate_stk_push
 from .serializers import GenerationSessionSerializer
-
+import requests as ext_requests
+from urllib.parse import urlparse
+from django.http import HttpResponse
 
 logger = logging.getLogger(__name__)
 
@@ -508,4 +513,199 @@ class DeleteSessionView(APIView):
             return Response(
                 {'error': 'Session not found'},
                 status=status.HTTP_404_NOT_FOUND
+            )
+
+class ImageProxyView(APIView):
+    """
+    GET /api/builder/proxy/image/?url=https://loremflickr.com/...
+    Proxies external images through your server so sandboxed iframes
+    can load them (null-origin CORS restriction bypass).
+    AllowAny — no auth needed, images are public.
+    """
+    permission_classes = [AllowAny]
+
+    # Allowlist of domains the proxy will fetch from
+    # Prevents your server being used as an open proxy
+    ALLOWED_DOMAINS = {
+        'loremflickr.com',
+        'picsum.photos',
+        'images.unsplash.com',
+        'source.unsplash.com',
+        'live.staticflickr.com',      # loremflickr pulls from Flickr CDN
+        'farm1.staticflickr.com',
+        'farm2.staticflickr.com',
+        'farm3.staticflickr.com',
+        'farm4.staticflickr.com',
+        'farm5.staticflickr.com',
+        'farm6.staticflickr.com',
+        'farm7.staticflickr.com',
+        'farm8.staticflickr.com',
+        'farm9.staticflickr.com',
+        'c1.staticflickr.com',
+        'c2.staticflickr.com',
+        'c3.staticflickr.com',
+        'c4.staticflickr.com',
+        'c5.staticflickr.com',
+        'c6.staticflickr.com',
+        'c7.staticflickr.com',
+        'c8.staticflickr.com',
+    }
+
+    def get(self, request):
+
+        url = request.query_params.get('url', '').strip()
+
+        if not url:
+            return HttpResponse(status=400)
+
+        # Security: only allow https
+        if not url.startswith('https://'):
+            return HttpResponse(status=403)
+
+        # Security: only allow known image domains
+        domain = urlparse(url).netloc.lstrip('www.')
+        if not any(url.startswith(f'https://{d}') or
+                   url.startswith(f'https://www.{d}') or
+                   domain.endswith(d)
+                   for d in self.ALLOWED_DOMAINS):
+            return HttpResponse(status=403)
+
+        try:
+            resp = ext_requests.get(
+                url,
+                timeout=15,
+                headers={
+                    'User-Agent': 'TechSpaceHub-ImageProxy/1.0',
+                    'Accept': 'image/*,*/*',
+                },
+                allow_redirects=True,   # loremflickr redirects to Flickr CDN
+            )
+
+            if resp.status_code != 200:
+                return HttpResponse(status=resp.status_code)
+
+            content_type = resp.headers.get('Content-Type', 'image/jpeg')
+
+            # Only serve actual images
+            if not content_type.startswith('image/'):
+                return HttpResponse(status=403)
+
+            response = HttpResponse(resp.content, content_type=content_type)
+            # Cache for 1 hour — same image URL always returns same photo
+            response['Cache-Control'] = 'public, max-age=3600'
+            response['Access-Control-Allow-Origin'] = '*'
+            return response
+
+        except ext_requests.exceptions.Timeout:
+            return HttpResponse(status=504)
+        except Exception:
+            return HttpResponse(status=502)
+
+
+class DownloadZipView(APIView):
+    """
+    GET /api/builder/sessions/<id>/download/
+    Generates a ZIP archive of the session files and serves it for download.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        from .services.image_utils import restore_files
+
+        session = get_object_or_404(
+            GenerationSession, id=session_id, user=request.user
+        )
+        clean_files = restore_files(session.files)
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for file_data in clean_files:
+                zip_file.writestr(file_data["name"], file_data["content"])
+
+        buffer.seek(0)
+        filename = f"{session.project_name.replace(' ', '_')}.zip"
+        response = HttpResponse(buffer.read(), content_type="application/zip")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class PushToGithubView(APIView):
+    """
+    POST /api/builder/sessions/<id>/push-to-github/
+    Pushes session files to a GitHub repository.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        from .services.image_utils import restore_files
+        import requests as req
+
+        github_token = request.data.get("github_token")
+        repo_name = request.data.get("repo_name", "my-website")
+
+        if not github_token:
+            return Response(
+                {"error": "GitHub token is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session = get_object_or_404(
+            GenerationSession, id=session_id, user=request.user
+        )
+        clean_files = restore_files(session.files)
+
+        headers = {
+            "Authorization": f"token {github_token}",
+            "Accept": "application/vnd.github.v3+json",
+        }
+
+        # 1. Get username
+        try:
+            user_resp = req.get("https://api.github.com/user", headers=headers)
+            if user_resp.status_code != 200:
+                return Response(
+                    {"error": "Invalid GitHub token or authentication failed."},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            username = user_resp.json()["login"]
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to connect to GitHub: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        # 2. Create repository (ignore if already exists)
+        req.post(
+            "https://api.github.com/user/repos",
+            headers=headers,
+            json={"name": repo_name, "auto_init": False},
+        )
+
+        # 3. Push files
+        try:
+            for file in clean_files:
+                path = file["name"]
+                content_b64 = base64.b64encode(file["content"].encode()).decode()
+
+                # GitHub API requires the SHA of the file if it already exists for updates
+                file_url = f"https://api.github.com/repos/{username}/{repo_name}/contents/{path}"
+                get_resp = req.get(file_url, headers=headers)
+                sha = get_resp.json().get("sha") if get_resp.status_code == 200 else None
+
+                put_data = {
+                    "message": f"Add {path} via AI Builder",
+                    "content": content_b64,
+                }
+                if sha:
+                    put_data["sha"] = sha
+
+                req.put(file_url, headers=headers, json=put_data)
+
+            return Response({"repo_url": f"https://github.com/{username}/{repo_name}"})
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to push files to GitHub: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

@@ -15,6 +15,9 @@ from .views import (
     SessionListView,
     SessionDetailView,
     DeleteSessionView,
+    ImageProxyView,
+    DownloadZipView,
+    PushToGithubView,
 )
 
 urlpatterns = [
@@ -46,4 +49,15 @@ urlpatterns = [
         DeleteSessionView.as_view(),
         name="session-delete",
     ),
+    path(
+        "sessions/<uuid:session_id>/download/",
+        DownloadZipView.as_view(),
+        name="session-download",
+    ),
+    path(
+        "sessions/<uuid:session_id>/push-to-github/",
+        PushToGithubView.as_view(),
+        name="session-push-github",
+    ),
+    path('api/builder/proxy/image/', ImageProxyView.as_view()),
 ]
