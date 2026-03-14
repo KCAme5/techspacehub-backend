@@ -297,29 +297,33 @@ class EnhancePromptView(APIView):
     def _ai_enhance(self, client, prompt: str) -> str:
         """Use Groq to rewrite the prompt into a detailed, specific instruction."""
         if not client.client:
+            logger.warning("Enhance: Groq client not initialized, using local fallback")
             return self._local_enhance(prompt)
 
         system = (
-            "You are a prompt engineer. Rewrite the user's website prompt into a "
-            "detailed, specific, professional instruction for an AI website builder. "
-            "Keep the core idea but add: specific sections to include, color scheme suggestions, "
-            "content details, interaction patterns. "
-            "Return ONLY the improved prompt text. No explanation. No preamble. Just the prompt."
+            "You are a prompt engineer for an AI website builder. "
+            "Rewrite the user's prompt into a detailed, specific build instruction. "
+            "Include: exact sections needed, realistic content (real product names/prices if relevant), "
+            "color scheme, image suggestions using picsum.photos URLs, interactive features. "
+            "Return ONLY the rewritten prompt. No explanation. No preamble. Just the improved prompt text."
         )
 
         try:
             response = client.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system},
-                    {"role": "user",   "content": f"Enhance this prompt: {prompt}"},
+                    {"role": "user",   "content": f"Enhance this website prompt: {prompt}"},
                 ],
                 model=client.model,
-                temperature=0.5,
-                max_tokens=500,
+                temperature=0.6,
+                max_tokens=600,
                 stream=False,
             )
-            return response.choices[0].message.content.strip()
-        except Exception:
+            result = response.choices[0].message.content.strip()
+            logger.info(f"Prompt enhanced successfully: {len(result)} chars")
+            return result
+        except Exception as e:
+            logger.error(f"AI enhance failed, using local fallback: {e}")
             return self._local_enhance(prompt)
 
     def _local_enhance(self, prompt: str) -> str:
@@ -358,8 +362,8 @@ class GenerateView(APIView):
         if len(prompt) < 10:
             return Response({'error': 'Prompt must be at least 10 characters'},
                             status=status.HTTP_400_BAD_REQUEST)
-        if len(prompt) > 1000:
-            return Response({'error': 'Prompt must be less than 1000 characters'},
+        if len(prompt) > 5000:
+            return Response({'error': 'Prompt must be less than 5000 characters'},
                             status=status.HTTP_400_BAD_REQUEST)
 
         # ── Credit check ──────────────────────────────────────────────────────
