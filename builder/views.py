@@ -409,7 +409,7 @@ class GenerateView(APIView):
         def stream_response():
             try:
                 if selected_model == 'stepfun':
-                    client = OpenRouterBuilderClient()
+                    client = OpenRouterBuilderClient(model='stepfun/step-3.5-flash:free')
                 elif selected_model == 'trinity':
                     client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
                 elif selected_model == 'gpt-oss':
@@ -418,6 +418,18 @@ class GenerateView(APIView):
                     client = OpenRouterBuilderClient(model='qwen/qwen3-coder:free')
                 elif selected_model == 'nemotron':
                     client = OpenRouterBuilderClient(model='nvidia/nemotron-3-super-120b-a12b:free')
+                elif selected_model == 'glm':
+                    client = OpenRouterBuilderClient(model='z-ai/glm-4.5-air:free')
+                elif selected_model == 'mistral':
+                    client = OpenRouterBuilderClient(model='mistralai/mistral-small-3.1-24b-instruct:free')
+                elif selected_model == 'qwen-next':
+                    client = OpenRouterBuilderClient(model='qwen/qwen3-next-80b-a3b-instruct:free')
+                elif selected_model == 'gemma':
+                    client = OpenRouterBuilderClient(model='google/gemma-3-27b:free')
+                elif selected_model == 'hunter':
+                    client = OpenRouterBuilderClient(model='openrouter/hunter-alpha')
+                elif selected_model == 'healer':
+                    client = OpenRouterBuilderClient(model='openrouter/healer-alpha')
                 else:
                     client = GroqBuilderClient(model=selected_model)
 
