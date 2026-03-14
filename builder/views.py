@@ -13,6 +13,10 @@ from django.shortcuts import get_object_or_404
 from .models import UserCredits, CreditPackage, CreditPayment, GenerationSession
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
 from .ai import GroqBuilderClient, GeminiBuilderClient
+from .ai.stepfun_client import OpenRouterBuilderClient
+from payments.services import initiate_stk_push
+from .serializers import GenerationSessionSerializer
+
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +111,6 @@ class PurchaseCreditsView(APIView):
 
         # Initiate M-Pesa STK push
         try:
-            from payments.services import initiate_stk_push
 
             payment_id_str    = str(payment.id)
             payment_ref_suffix = payment_id_str[:8].upper()
@@ -402,6 +405,9 @@ class GenerateView(APIView):
             try:
                 if selected_model == 'gemini':
                     client = GeminiBuilderClient()
+
+                elif selected_model == 'stepfun':
+                    client = OpenRouterBuilderClient()
                 else:
                     client = GroqBuilderClient(model=selected_model)
 
@@ -465,7 +471,6 @@ class SessionListView(APIView):
 
     def get(self, request):
         sessions = GenerationSession.objects.filter(user=request.user)[:20]
-        from .serializers import GenerationSessionSerializer
         return Response(GenerationSessionSerializer(sessions, many=True).data)
 
 
@@ -479,7 +484,6 @@ class SessionDetailView(APIView):
             session = GenerationSession.objects.get(
                 id=session_id, user=request.user
             )
-            from .serializers import GenerationSessionSerializer
             return Response(GenerationSessionSerializer(session).data)
         except GenerationSession.DoesNotExist:
             return Response(
