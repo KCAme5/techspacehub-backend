@@ -129,6 +129,26 @@ RULES:
 
 Return ONLY changed files. No explanations."""
 
+    def _build_user_message(self, prompt: str, existing_files: list, output_type: str, is_edit: bool) -> str:
+        """Build the user message — shared by all AI clients."""
+        if is_edit and existing_files:
+            files_context = "\n\n".join([
+                f"--- {f['name']} ---\n{f['content']}"
+                for f in existing_files
+            ])
+            return (
+                f"Here are the CURRENT website files:\n\n"
+                f"{files_context}\n\n"
+                f"USER EDIT REQUEST: {prompt}\n\n"
+                f"Return ONLY the files that need to change using the --- filename --- marker format."
+            )
+        else:
+            return (
+                f"Build a complete, production-ready "
+                f"{'React app' if output_type == 'react' else 'HTML website'} "
+                f"for the following request:\n\n{prompt}"
+            )
+
     @staticmethod
     def parse_multi_file_output(raw_text: str) -> list:
         """
