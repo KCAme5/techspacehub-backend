@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 class OpenRouterBuilderClient(BaseWebsiteGenerator):
     """
-    OpenRouter client — supports Step 3.5 Flash and other models.
-    Handles reasoning models that emit <think>...</think> blocks before code.
+    OpenRouter client — supports multiple models via OpenRouter aggregator.
+    Handles reasoning models that emit <think>...</think> blocks if present.
     """
 
     def __init__(self, model="stepfun/step-3.5-flash:free"):
@@ -31,11 +31,12 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
         system  = self._build_edit_system_prompt() if is_edit else self._build_system_prompt(output_type)
         user    = self._build_user_message(prompt, existing_files, output_type, is_edit)
 
-        yield self._sse({"progress": "Connecting to Step 3.5 Flash..."})
+        model_display = self.model.split('/')[-1].replace(':free', '').upper()
+        yield self._sse({"progress": f"Connecting to {model_display}..."})
 
         full_response    = ""
         in_think_block   = False  # track <think> reasoning sections
-        think_buffer     = ""     # accumulate think content (shown as progress, not as code)
+        think_buffer     = ""     # accumulate think content
 
         try:
             resp = requests.post(
@@ -66,7 +67,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 yield self._sse({"error": f"OpenRouter error {resp.status_code}: {error_text[:200]}"})
                 return
 
-            yield self._sse({"progress": "Building structure..."})
+            yield self._sse({"progress": "Generating code..."})
 
             for line in resp.iter_lines():
                 if not line:
@@ -88,11 +89,8 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                         continue
 
                     # ── Handle reasoning model <think> blocks ─────────────────
-                    # Step 3.5 Flash emits <think>...</think> before the actual code.
-                    # We show thinking as progress messages, not as code chunks.
                     if "<think>" in token:
                         in_think_block = True
-                        # Split: part before <think> goes to code, rest is thinking
                         parts = token.split("<think>", 1)
                         if parts[0]:
                             full_response += parts[0]
@@ -103,11 +101,9 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
                     if "</think>" in token:
                         in_think_block = False
-                        # Part after </think> goes to code
                         parts = token.split("</think>", 1)
                         think_buffer += parts[0]
-                        logger.debug(f"Think block: {len(think_buffer)} chars")
-                        yield self._sse({"progress": "Building structure..."})
+                        yield self._sse({"progress": "Generating code..."})
                         if len(parts) > 1 and parts[1]:
                             full_response += parts[1]
                             yield self._sse({"chunk": parts[1]})
@@ -116,7 +112,6 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
                     if in_think_block:
                         think_buffer += token
-                        # Stream thinking tokens to frontend as a special type
                         yield self._sse({"thinking": token})
                         continue
 
@@ -127,24 +122,16 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-            # ── Log what we got for debugging ─────────────────────────────────
-            logger.info(f"OpenRouter raw response: {len(full_response)} chars")
-            if len(full_response) < 200:
-                logger.warning(f"Very short response from OpenRouter: '{full_response[:200]}'")
-
             yield self._sse({"progress": "Parsing files..."})
 
-            # ── Strip any remaining <think> blocks from full_response ──────────
+            # ── Strip any remaining <think> blocks ──────────
             full_response = re.sub(r'<think>.*?</think>', '', full_response, flags=re.DOTALL).strip()
 
             files = self.parse_multi_file_output(full_response)
 
             if not files:
-                logger.warning(f"No files parsed. Raw response sample: {full_response[:500]}")
-                # Last resort fallback
                 files = [{"name": "index.html", "content": full_response or "<!-- Empty response from model -->"}]
 
-            # ── Edit mode: merge changed files into existing ───────────────────
             if is_edit and existing_files:
                 merged = {f["name"]: f["content"] for f in existing_files}
                 for f in files:
@@ -155,8 +142,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             yield self._sse({"done": True, "files": files})
 
         except requests.exceptions.Timeout:
-            logger.error("OpenRouter request timed out after 180s")
-            yield self._sse({"error": "Request timed out. Step 3.5 Flash took too long. Try a shorter prompt or switch to Llama."})
+            yield self._sse({"error": f"Request timed out. {model_display} took too long."})
 
         except Exception as e:
             logger.error(f"OpenRouter error: {e}", exc_info=True)

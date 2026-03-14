@@ -408,11 +408,12 @@ class GenerateView(APIView):
         # ── SSE generator ─────────────────────────────────────────────────────
         def stream_response():
             try:
-                if selected_model == 'gemini':
-                    client = GeminiBuilderClient()
-
-                elif selected_model == 'stepfun':
+                if selected_model == 'stepfun':
                     client = OpenRouterBuilderClient()
+                elif selected_model == 'trinity':
+                    client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
+                elif selected_model == 'gpt-oss':
+                    client = OpenRouterBuilderClient(model='openai/gpt-oss-120b')
                 else:
                     client = GroqBuilderClient(model=selected_model)
 
