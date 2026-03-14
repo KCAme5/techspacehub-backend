@@ -33,23 +33,23 @@ CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
      });
    });
 
-4. IMAGES — use picsum.photos with descriptive seeds:
-   - Format: https://picsum.photos/seed/DESCRIPTIVE-KEYWORD/WIDTH/HEIGHT
-   - Fruit website: https://picsum.photos/seed/tropical-fruit/800/500
-   - Chicken: https://picsum.photos/seed/farm-chicken/800/500
-   - Restaurant: https://loremflickr.com/800/500/restaurant,food
-   - NEVER use picsum.photos — images are random, change on every refresh, unprofessional
-   - NEVER use source.unsplash.com — it is shut down and returns 404
-   - Use loremflickr.com ONLY — format: https://loremflickr.com/WIDTH/HEIGHT/keyword1,keyword2
-   - Use SPECIFIC keywords matching the website topic:
-     Chicken shop:   https://loremflickr.com/800/500/chicken,farm
-     Fruit market:   https://loremflickr.com/800/400/fruit,market
-     Cybersecurity:  https://loremflickr.com/800/500/cybersecurity,technology
-     Restaurant:     https://loremflickr.com/800/500/restaurant,food
-     Portfolio hero: https://loremflickr.com/1200/600/developer,coding
-     Team member:    https://loremflickr.com/400/400/person,professional
-     Product item:   https://loremflickr.com/400/300/product,shop
-   - Add a unique number at end to get different images: /800/500/fruit,market/1 /2 /3
+4. IMAGES — use high-quality Unsplash photos with specific IDs for consistency:
+   - Format: https://images.unsplash.com/photo-ID?auto=format&fit=crop&w=WIDTH&q=80
+   - STATIC ID CATALOG (Topic: ID):
+     - Tech/AI: photo-1485827404703-89b55fcc595e
+     - Code/Software: photo-1461749280684-dccba630e2f6
+     - Cyber/Hacker: photo-1550751827-4bd374c3f58b
+     - Corporate/Biz: photo-1497366216548-37526070297c
+     - Product/SaaS: photo-1460925895917-afdab827c52f
+     - Restaurant/Food: photo-1504674900247-0877df9cc836
+     - Nature/Garden: photo-1441974231531-c6227db76b6e
+     - Portfolio/Person: photo-1507003211169-0a1dd7228f2d
+     - Fitness/Gym: photo-1534438327276-14e5300c3a48
+     - Travel/Modern: photo-1476514525535-07fb3b4ae5f1
+   - NEVER use picsum.photos — images change on refresh and look unprofessional.
+   - NEVER use random keywords — results are unpredictable.
+   - ALWAYS use a SPECIFIC ID from the catalog or a known high-quality ID.
+   - For width, use 1200 (Hero), 800 (Sections), or 400 (Cards).
 
 5. CONTENT — NEVER use Lorem Ipsum. Use REAL content matching the request:
    - Real product names, real prices, real descriptions
@@ -68,7 +68,8 @@ CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
 --- script.js ---
 [complete JS]
 
-Return ONLY the markers and code. No explanations."""
+Return ONLY the markers and code. No explanations.
+"""
 
         else:
             return """You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY React apps.
@@ -93,21 +94,21 @@ CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
      onClick={() => document.getElementById('section-id')?.scrollIntoView({behavior:'smooth'})}
    - Each section must have a matching id= attribute
 
-4. IMAGES — use loremflickr.com for ALL images:
-   - Format: https://loremflickr.com/WIDTH/HEIGHT/keyword1,keyword2
-   - NEVER use picsum.photos — images are random, change on every page refresh, look unprofessional
-   - NEVER use source.unsplash.com — it is permanently shut down
-   - NEVER use images.unsplash.com — requires auth, breaks in preview
-   - loremflickr returns topic-specific photos that stay consistent and relevant:
-     Chicken/poultry shop: https://loremflickr.com/800/500/chicken,poultry/1
-     Fruit/produce:        https://loremflickr.com/800/400/fruit,tropical/1
-     Cybersecurity:        https://loremflickr.com/800/500/cybersecurity,hacker/1
-     Restaurant/food:      https://loremflickr.com/800/500/restaurant,food/1
-     Developer portfolio:  https://loremflickr.com/1200/600/developer,coding/1
-     Team/people:          https://loremflickr.com/400/400/person,professional/1
-     Product cards:        https://loremflickr.com/400/300/product,shop/1
-     Hero background:      https://loremflickr.com/1600/900/TOPIC,website/1
-   - Increment the trailing number /1 /2 /3 for different images of the same topic
+4. IMAGES — use high-quality Unsplash photos with specific IDs for consistency:
+   - Format: https://images.unsplash.com/photo-ID?auto=format&fit=crop&w=WIDTH&q=80
+   - Use these Topic-to-ID mappings for the best visual quality:
+     - Hero Tech/AI:  photo-1518770660439-4636190af475
+     - Coding Console: photo-1542831371-29b0f74f9713
+     - Cyber/Matrix:   photo-1563986768609-322da13575f3
+     - Modern Office:  photo-1497215728101-856f4ea42174
+     - SaaS Metrics:   photo-1551288049-bebda4e38f71
+     - Fine Dining:    photo-1414235077428-338989a2e8c0
+     - Fashion/Model:  photo-1490481651871-ab68de25d43d
+     - Real Estate:    photo-1480074568708-e7b720bb3f09
+     - Minimalist/Art: photo-1500648767791-00dcc994a43e
+   - Width: 1600 (Hero), 800 (Content), 400 (Thumbs).
+   - NEVER use picsum.photos or loremflickr — they change on every refresh.
+   - Unsplash images remain static and provide a PREMIUM aesthetic.
 
 5. CONTENT — NEVER use Lorem Ipsum. Use REAL content matching the request.
    Real product names, real prices, real descriptions that match the website topic.
