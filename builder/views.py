@@ -414,6 +414,10 @@ class GenerateView(APIView):
                     client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
                 elif selected_model == 'gpt-oss':
                     client = OpenRouterBuilderClient(model='openai/gpt-oss-120b')
+                elif selected_model == 'qwen-coder':
+                    client = OpenRouterBuilderClient(model='qwen/qwen3-coder:free')
+                elif selected_model == 'nemotron':
+                    client = OpenRouterBuilderClient(model='nvidia/nemotron-3-super-120b-a12b:free')
                 else:
                     client = GroqBuilderClient(model=selected_model)
 
