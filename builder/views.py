@@ -571,12 +571,15 @@ class ImageProxyView(APIView):
     def get(self, request):
 
         url = request.query_params.get('url', '').strip()
+        logger.info(f"ImageProxy: Requested URL: {url}")
 
         if not url:
+            logger.warning("ImageProxy: No URL provided")
             return HttpResponse(status=400)
 
         # Security: only allow https
         if not url.startswith('https://'):
+            logger.warning(f"ImageProxy: Non-HTTPS URL blocked: {url}")
             return HttpResponse(status=403)
 
         # Security: only allow known image domains
@@ -585,6 +588,7 @@ class ImageProxyView(APIView):
                    url.startswith(f'https://www.{d}') or
                    domain.endswith(d)
                    for d in self.ALLOWED_DOMAINS):
+            logger.warning(f"ImageProxy: Domain blocked: {domain} for URL: {url}")
             return HttpResponse(status=403)
 
         try:
@@ -595,27 +599,32 @@ class ImageProxyView(APIView):
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
                     'Accept': 'image/*,*/*',
                 },
-                allow_redirects=True,   # loremflickr redirects to Flickr CDN
+                allow_redirects=True,
             )
+
+            logger.info(f"ImageProxy: Unsplash/External response status: {resp.status_code} for {url}")
 
             if resp.status_code != 200:
                 return HttpResponse(status=resp.status_code)
 
             content_type = resp.headers.get('Content-Type', 'image/jpeg')
+            logger.info(f"ImageProxy: Content-Type: {content_type}")
 
             # Only serve actual images
             if not content_type.startswith('image/'):
+                logger.warning(f"ImageProxy: Non-image content type blocked: {content_type}")
                 return HttpResponse(status=403)
 
             response = HttpResponse(resp.content, content_type=content_type)
-            # Cache for 1 hour — same image URL always returns same photo
             response['Cache-Control'] = 'public, max-age=3600'
             response['Access-Control-Allow-Origin'] = '*'
             return response
 
         except ext_requests.exceptions.Timeout:
+            logger.error(f"ImageProxy: Timeout fetching {url}")
             return HttpResponse(status=504)
-        except Exception:
+        except Exception as e:
+            logger.error(f"ImageProxy: Error fetching {url}: {str(e)}")
             return HttpResponse(status=502)
 
 
