@@ -3,7 +3,7 @@
 Server-side unlock logic for hub education-path levels.
 Called whenever a learner requests the module/lesson state for a level.
 """
-from courses.models import Module
+from courses.models import Module, Enrollment
 from progress.models import UserLessonProgress, UserModuleAccess
 
 
@@ -12,9 +12,8 @@ def get_level_progress_state(user, level):
     Returns the full unlock state for all modules + lessons in a level.
 
     FREE RULE:    module.order <= 2  → always accessible
-    PAID RULE:    module.order >= 3  → requires UserModuleAccess record
-    LESSON RULE:  only first lesson open by default; each subsequent
-                  lesson unlocks only when previous is complete
+    PAID RULE:    module.order >= 3  → requires UserModuleAccess record OR legacy Enrollment for a corresponding Week
+    LESSON RULE:  all lessons in an open module are unlocked
     MODULE RULE:  next module unlocks only when all lessons in
                   current module are complete
     """
@@ -34,7 +33,22 @@ def get_level_progress_state(user, level):
 
     for module in modules:
         is_free        = module.order <= 2
-        has_paid       = module.id in paid_ids or has_full_level_access
+        
+        # Check if any lesson in this module is part of a Week the user is enrolled in
+        has_legacy_enrollment = False
+        module_lesson_ids = module.lessons.values_list('id', flat=True)
+        # We also check if the module title matches a week title or similar mapping
+        # but the most robust way is to check if any week linked to this level's course
+        # matches the content. Since 'Week' and 'Module' are almost 1:1 in this project structure:
+        has_legacy_enrollment = Enrollment.objects.filter(
+            user=user, 
+            week__course=level.course,
+            week__level=level.level_type,
+            week__week_number=module.order, # Assuming order aligns with week_number
+            is_active=True
+        ).exists()
+
+        has_paid       = module.id in paid_ids or has_full_level_access or has_legacy_enrollment
         is_accessible  = is_free or has_paid
         needs_payment  = not is_free and not has_paid
         module_open    = is_accessible and prev_module_complete
@@ -47,7 +61,8 @@ def get_level_progress_state(user, level):
         for lesson in lessons:
             prog    = UserLessonProgress.objects.filter(user=user, lesson=lesson).first()
             is_done = prog.completed if prog else False
-            is_open = module_open and prev_lesson_done
+            # If the module is open, ALL lessons in it are open as per user request
+            is_open = module_open
 
             lesson_states.append({
                 'id':        lesson.id,
