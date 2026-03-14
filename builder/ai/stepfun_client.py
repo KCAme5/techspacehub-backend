@@ -116,9 +116,8 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
                     if in_think_block:
                         think_buffer += token
-                        # Send thinking progress every ~100 chars so user sees activity
-                        if len(think_buffer) % 100 < len(token):
-                            yield self._sse({"progress": "Model is reasoning..."})
+                        # Stream thinking tokens to frontend as a special type
+                        yield self._sse({"thinking": token})
                         continue
 
                     # ── Normal code token ─────────────────────────────────────
