@@ -484,16 +484,18 @@ class GenerateView(APIView):
                 session.save()
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
-        # ── StreamingHttpResponse — sends each yield immediately ──────────────
-        # DO NOT use DRF Response() here — it buffers the entire generator
-        # before sending, which completely breaks SSE streaming.
+        # ── StreamingHttpResponse ─────────────────────────────────────────────
         response = StreamingHttpResponse(
             stream_response(),
             content_type='text/event-stream',
         )
-        response['Cache-Control']               = 'no-cache'
-        response['X-Accel-Buffering']           = 'no'  # disables Nginx buffering
-        response['Access-Control-Allow-Origin'] = '*'
+        # Prevents buffering on Nginx, Coolify, and Cloudflare
+        response['Cache-Control']     = 'no-cache, no-transform'
+        response['X-Accel-Buffering'] = 'no'
+        response['Content-Encoding']  = 'identity'
+        response['Gzip']              = 'off'
+        response['Connection']        = 'keep-alive'
+        
         return response
 
 

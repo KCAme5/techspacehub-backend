@@ -17,7 +17,8 @@ STRICT PROTOCOL:
 
 4. END your response with a summary inside <description>...</description> tags. Describe exactly what you built.
 5. Use lowercase for all filenames.
-6. Return ONLY markers, tags, and code. No markdown fences around markers.
+6. Return ONLY markers, tags, and code. DO NOT use markdown code blocks (```) around markers or files.
+7. NEVER use <tool_call> or <thought> tags.
 """
         if output_type == 'html':
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY HTML websites.
@@ -57,7 +58,9 @@ STRICT PROTOCOL:
 5. END your response with a summary inside <description>...</description> tags.
 6. Use the file marker format: --- filename ---
 7. Standardize all filenames to lowercase.
-8. Return ONLY markers, tags, and code. No markdown fences."""
+8. NEVER use <tool_call> or <thought> tags.
+9. Return ONLY markers, tags, and code. DO NOT use markdown code blocks (```) around markers or files.
+"""
 
     def _build_user_message(self, prompt: str, existing_files: list, output_type: str, is_edit: bool) -> str:
         """Build the user message — shared by all AI clients."""
@@ -82,14 +85,21 @@ STRICT PROTOCOL:
     @staticmethod
     def parse_multi_file_output(raw_text: str) -> list:
         """
-        Parses AI output looking for file markers like:
-        --- filename ---
+        Parses AI output looking for file markers like: --- filename ---
+        Safely strips reasoning tags like <think>, <thought>, <tool_call>, and <description>.
         Returns a list of dicts: [{"name": filename, "content": content}]
         """
-        files = []
-        marker_pattern = r'(?:\n|^)(?:[#\-\*]{3,}\s*)([\w\./\-\\]+)(?:\s*[#\-\*]{3,})'
+        # 1. Aggressively strip known meta-tags that shouldn't be in files
+        clean_text = re.sub(r'<(?:think|thought|description|tool_call)>.*?</(?:think|thought|description|tool_call)>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
+        # Also strip unclosed tags at the start/end
+        clean_text = re.sub(r'<(?:think|thought|description|tool_call)>.*$', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
+        clean_text = re.sub(r'^.*?</(?:think|thought|description|tool_call)>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
 
-        parts = re.split(marker_pattern, raw_text, flags=re.IGNORECASE)
+        files = []
+        # More resilient marker pattern: handles --- filename ---, **filename**, [filename], etc.
+        marker_pattern = r'(?:\n|^)(?:[#\-\*]{3,}\s*|\*\*|\[|File:\s*)([\w\./\-\\]+)(?:\s*[#\-\*]{3,}|(?:\s*[:\]]|\*\*))'
+
+        parts = re.split(marker_pattern, clean_text, flags=re.IGNORECASE)
 
         if len(parts) > 1:
             for i in range(1, len(parts), 2):
@@ -107,9 +117,18 @@ STRICT PROTOCOL:
                 )
 
                 if filename and content:
-                    # Standardize all filenames to lowercase to prevent duplication (e.g., App.jsx vs app.jsx)
-                    filename = filename.lower()
+                    # Ignore non-file markers that might leak (e.g. meta instructions)
+                    if any(stop in filename for stop in ['step', 'thinking', 'thought', 'description']):
+                        continue
+                        
                     files.append({"name": filename, "content": content.strip()})
+        
+        # fallback: if no markers found but text exists, it might be a single-file response
+        if not files and clean_text.strip():
+            logger.warning("No file markers found, using raw text as index.html")
+            # Only if it looks like code/html
+            if '<' in clean_text or '{' in clean_text:
+                files.append({"name": "index.html", "content": clean_text.strip()})
 
         return files
 
