@@ -69,6 +69,12 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
             yield self._sse({"progress": "Generating code..."})
 
+            marker_regex = re.compile(r'(?:\n|^)(?:[#\-\*]{3,}\s*)([\w\./\-\\]+)(?:\s*[#\-\*]{3,})', re.IGNORECASE)
+            
+            # To detect markers that might be split across chunks, we keep a small buffer
+            stream_window = ""
+            detected_files = set()
+
             for line in resp.iter_lines():
                 if not line:
                     continue
@@ -95,6 +101,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                         if parts[0]:
                             full_response += parts[0]
                             yield self._sse({"chunk": parts[0]})
+                            stream_window += parts[0]
                         think_buffer = parts[1] if len(parts) > 1 else ""
                         yield self._sse({"progress": "Model is reasoning..."})
                         continue
@@ -107,6 +114,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                         if len(parts) > 1 and parts[1]:
                             full_response += parts[1]
                             yield self._sse({"chunk": parts[1]})
+                            stream_window += parts[1]
                         think_buffer = ""
                         continue
 
@@ -118,11 +126,24 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                     # ── Normal code token ─────────────────────────────────────
                     full_response += token
                     yield self._sse({"chunk": token})
+                    
+                    # ── Marker Detection Logic ──────────────────────────────
+                    stream_window += token
+                    if len(stream_window) > 200: # Keep window small but enough for a marker
+                        stream_window = stream_window[-200:]
+                    
+                    matches = marker_regex.findall(stream_window)
+                    if matches:
+                        latest_file = matches[-1].strip().lower()
+                        if latest_file not in detected_files:
+                            detected_files.add(latest_file)
+                            action = "Editing" if is_edit else "Writing"
+                            yield self._sse({"progress": f"{action} {latest_file}..."})
 
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-            yield self._sse({"progress": "Parsing files..."})
+            yield self._sse({"progress": "Finalizing build..."})
 
             # ── Strip any remaining <think> blocks ──────────
             full_response = re.sub(r'<think>.*?</think>', '', full_response, flags=re.DOTALL).strip()
