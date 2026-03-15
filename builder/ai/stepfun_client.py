@@ -84,6 +84,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             stream_window  = ""          # last 400 chars for marker detection
             detected_files = set()       # files already reported as progress
             last_step      = ""          # last step marker text
+            token_buffer   = ""          # buffer for partial meta tags
 
             # ── Stream line-by-line using network-driven chunks ───────────────
             # chunk_size=None lets urllib3/TCP decide when to deliver data,
@@ -113,40 +114,70 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-                # ── Meta-tag state machine ─────────────────────────────────
-                # Every single token flows through this filter BEFORE going
-                # to the code editor, so reasoning text never leaks.
-                pending = token
-                while pending:
+                # ── Token Accumulation & Meta-tag state machine ───────────────
+                # Tokens can be split: "<th", "ink>". We must buffer to detect tags.
+                token_buffer += token
+
+                while token_buffer:
                     if in_meta_block:
-                        close_match = META_CLOSE.search(pending)
+                        # Look for closing tag
+                        close_match = META_CLOSE.search(token_buffer)
                         if close_match:
                             in_meta_block = False
                             if meta_tag_name == "think":
                                 yield self._sse({"progress": "Generating code..."})
-                            pending = pending[close_match.end():]
+                            # Send everything before the close tag to thinking stream
+                            thinking_content = token_buffer[:close_match.start()]
+                            if thinking_content:
+                                yield self._sse({"thinking": thinking_content})
+                            token_buffer = token_buffer[close_match.end():]
                         else:
-                            # Everything is still inside the meta block
-                            yield self._sse({"thinking": pending})
-                            pending = ""
+                            # Not closed yet.
+                            # We can safely stream up to the last '<' to thinking, 
+                            # holding back anything after '<' just in case it's the start of </...
+                            last_lt = token_buffer.rfind('<')
+                            if last_lt == -1:
+                                yield self._sse({"thinking": token_buffer})
+                                token_buffer = ""
+                            elif last_lt > 0:
+                                yield self._sse({"thinking": token_buffer[:last_lt]})
+                                token_buffer = token_buffer[last_lt:]
+                            break # Wait for more chunks to resolve '<'
+
                     else:
-                        open_match = META_OPEN.search(pending)
+                        # We are IN CODE land. Look for opening tags.
+                        open_match = META_OPEN.search(token_buffer)
                         if open_match:
-                            before = pending[:open_match.start()]
+                            before = token_buffer[:open_match.start()]
                             if before:
                                 full_response += before
                                 stream_window += before
                                 yield self._sse({"chunk": before})
+
                             in_meta_block = True
                             meta_tag_name = open_match.group(1).lower()
                             yield self._sse({"progress": "Model is reasoning..."})
-                            pending = pending[open_match.end():]
+                            token_buffer = token_buffer[open_match.end():]
                         else:
-                            # Pure code token
-                            full_response += pending
-                            stream_window += pending
-                            yield self._sse({"chunk": pending})
-                            pending = ""
+                            # No complete opening tag found.
+                            # Check if the buffer ends with a partial tag like '<th'
+                            last_lt = token_buffer.rfind('<')
+                            if last_lt == -1:
+                                # Safe to flush entirely
+                                full_response += token_buffer
+                                stream_window += token_buffer
+                                yield self._sse({"chunk": token_buffer})
+                                token_buffer = ""
+                            else:
+                                # Has a '<'. Flush everything BEFORE it.
+                                # Hold back the '<' and everything after it.
+                                if last_lt > 0:
+                                    safe_chunk = token_buffer[:last_lt]
+                                    full_response += safe_chunk
+                                    stream_window += safe_chunk
+                                    yield self._sse({"chunk": safe_chunk})
+                                    token_buffer = token_buffer[last_lt:]
+                                break # Wait for more chunks to see if '<' becomes '<think>'
 
                 # ── Keep window bounded ────────────────────────────────────
                 if len(stream_window) > 500:
