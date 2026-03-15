@@ -649,7 +649,7 @@ def get_boilerplate_files(output_type, project_name="my-website"):
                 "react-dom": "^18.2.0",
                 "lucide-react": "^0.263.1",
                 "framer-motion": "^10.12.16",
-                "react-icons": "^4.10.1",
+                "react-icons": "^4.11.0",
                 "clsx": "^2.0.0",
                 "tailwind-merge": "^2.0.0"
             },
@@ -669,20 +669,57 @@ def get_boilerplate_files(output_type, project_name="my-website"):
         vite_config = "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n})"
         boilerplate.append({"name": "vite.config.js", "content": vite_config})
 
+        # tailwind.config.js
+        tailwind_config = """/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}"""
+        boilerplate.append({"name": "tailwind.config.js", "content": tailwind_config})
+
+        # postcss.config.js
+        postcss_config = """export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}"""
+        boilerplate.append({"name": "postcss.config.js", "content": postcss_config})
+
         # index.html (root)
         index_html = f"""<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{project_name}</title>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/App.jsx"></script>
+    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>"""
         boilerplate.append({"name": "index.html", "content": index_html})
+
+        # src/main.jsx (Entry Point)
+        main_jsx = """import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)"""
+        boilerplate.append({"name": "src/main.jsx", "content": main_jsx})
 
         # README.md
         readme = f"""# {project_name}
