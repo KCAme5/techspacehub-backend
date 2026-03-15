@@ -87,7 +87,7 @@ class PurchaseCreditsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        package_id   = request.data.get("package_id")
+        package_id = request.data.get("package_id")
         phone_number = request.data.get("phone_number", "").strip()
 
         if not package_id or not phone_number:
@@ -117,7 +117,7 @@ class PurchaseCreditsView(APIView):
         # Initiate M-Pesa STK push
         try:
 
-            payment_id_str    = str(payment.id)
+            payment_id_str = str(payment.id)
             payment_ref_suffix = payment_id_str[:8].upper()
             result = initiate_stk_push(
                 phone=phone_number,
@@ -187,8 +187,8 @@ class MpesaCreditCallbackView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        data        = request.data
-        stk         = data.get("Body", {}).get("stkCallback", {})
+        data = request.data
+        stk = data.get("Body", {}).get("stkCallback", {})
         checkout_id = stk.get("CheckoutRequestID", "")
         result_code = str(stk.get("ResultCode", ""))
 
@@ -213,7 +213,7 @@ class MpesaCreditCallbackView(APIView):
                     payment.mpesa_receipt = str(item.get("Value", ""))
 
             with transaction.atomic():
-                payment.status       = "completed"
+                payment.status = "completed"
                 payment.completed_at = timezone.now()
                 payment.save()
 
@@ -257,14 +257,13 @@ class DeductCreditView(APIView):
                         {"error": "Not enough credits."},
                         status=status.HTTP_402_PAYMENT_REQUIRED,
                     )
-                credits_obj.credits    -= 1
+                credits_obj.credits -= 1
                 credits_obj.total_used += 1
                 credits_obj.save()
                 return Response({"credits": credits_obj.credits})
         except UserCredits.DoesNotExist:
             return Response(
-                {"error": "No credit account found."},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "No credit account found."}, status=status.HTTP_404_NOT_FOUND
             )
 
 
@@ -286,21 +285,25 @@ class EnhancePromptView(APIView):
             )
 
         try:
-            client = GroqBuilderClient(model='llama')
+            client = GroqBuilderClient(model="llama")
             enhanced = self._ai_enhance(client, prompt)
-            return Response({
-                "original_prompt": prompt,
-                "enhanced_prompt": enhanced,
-                "message": "Prompt enhanced successfully.",
-            })
+            return Response(
+                {
+                    "original_prompt": prompt,
+                    "enhanced_prompt": enhanced,
+                    "message": "Prompt enhanced successfully.",
+                }
+            )
         except Exception as e:
             logger.error(f"Enhance prompt error: {e}")
             # Fallback to local enhancement if AI fails
-            return Response({
-                "original_prompt": prompt,
-                "enhanced_prompt": self._local_enhance(prompt),
-                "message": "Prompt enhanced.",
-            })
+            return Response(
+                {
+                    "original_prompt": prompt,
+                    "enhanced_prompt": self._local_enhance(prompt),
+                    "message": "Prompt enhanced.",
+                }
+            )
 
     def _ai_enhance(self, client, prompt: str) -> str:
         """Use Groq to rewrite the prompt into a detailed, specific instruction."""
@@ -326,7 +329,10 @@ class EnhancePromptView(APIView):
             response = client.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system},
-                    {"role": "user",   "content": f"Enhance this website prompt: {prompt}"},
+                    {
+                        "role": "user",
+                        "content": f"Enhance this website prompt: {prompt}",
+                    },
                 ],
                 model=client.model,
                 temperature=0.6,
@@ -342,28 +348,46 @@ class EnhancePromptView(APIView):
 
     def _local_enhance(self, prompt: str) -> str:
         """Robust fallback enhancement without AI side-effects."""
-        enhanced     = prompt
+        enhanced = prompt
         prompt_lower = prompt.lower()
 
         extra_specs = []
 
         if not any(w in prompt_lower for w in ["responsive", "mobile", "device"]):
-            extra_specs.append("Ensure the layout is fully responsive, looking pixel-perfect on mobile (iPhone 14), tablet (iPad Pro), and 4k desktops.")
+            extra_specs.append(
+                "Ensure the layout is fully responsive, looking pixel-perfect on mobile (iPhone 14), tablet (iPad Pro), and 4k desktops."
+            )
 
-        if not any(w in prompt_lower for w in ["color", "colors", "theme", "aesthetic"]):
-            extra_specs.append("Use a premium, cohesive color palette with deep backgrounds (#0D1214), high-contrast accents (#48CAE4), and soft readability levels.")
+        if not any(
+            w in prompt_lower for w in ["color", "colors", "theme", "aesthetic"]
+        ):
+            extra_specs.append(
+                "Use a premium, cohesive color palette with deep backgrounds (#0D1214), high-contrast accents (#48CAE4), and soft readability levels."
+            )
 
-        if not any(w in prompt_lower for w in ["navigation", "navbar", "menu", "header"]):
-            extra_specs.append("Include a sticky, glassmorphism-style navigation bar with smooth-scroll links and a prominent Call-to-Action button.")
+        if not any(
+            w in prompt_lower for w in ["navigation", "navbar", "menu", "header"]
+        ):
+            extra_specs.append(
+                "Include a sticky, glassmorphism-style navigation bar with smooth-scroll links and a prominent Call-to-Action button."
+            )
 
-        if not any(w in prompt_lower for w in ["image", "photo", "visual", "photography"]):
-            extra_specs.append("Use high-quality, professional photography from the Unsplash library. Avoid generic placeholders or picsum photos.")
+        if not any(
+            w in prompt_lower for w in ["image", "photo", "visual", "photography"]
+        ):
+            extra_specs.append(
+                "Use high-quality, professional photography from the Unsplash library. Avoid generic placeholders or picsum photos."
+            )
 
         if not any(w in prompt_lower for w in ["modern", "animation", "motion", "ui"]):
-            extra_specs.append("Implement subtle micro-animations (fade-ins, hover lifts) and modern UI elements like cards with soft shadows and glassmorphism overlays.")
+            extra_specs.append(
+                "Implement subtle micro-animations (fade-ins, hover lifts) and modern UI elements like cards with soft shadows and glassmorphism overlays."
+            )
 
         if extra_specs:
-            enhanced += "\n\nADDITIONAL TECHNICAL SPECIFICATIONS:\n- " + "\n- ".join(extra_specs)
+            enhanced += "\n\nADDITIONAL TECHNICAL SPECIFICATIONS:\n- " + "\n- ".join(
+                extra_specs
+            )
 
         return enhanced.strip()
 
@@ -375,42 +399,49 @@ class GenerateView(APIView):
 
     def post(self, request):
 
-        prompt         = request.data.get('prompt', '').strip()
-        output_type    = request.data.get('output_type', 'react')
-        style_preset   = request.data.get('style_preset', '')
-        selected_model = request.data.get('model', 'llama')
+        prompt = request.data.get("prompt", "").strip()
+        output_type = request.data.get("output_type", "react")
+        style_preset = request.data.get("style_preset", "")
+        selected_model = request.data.get("model", "llama")
 
         # ── Validation ────────────────────────────────────────────────────────
         if not prompt:
-            return Response({'error': 'Prompt is required'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Prompt is required"}, status=status.HTTP_400_BAD_REQUEST
+            )
         if len(prompt) < 10:
-            return Response({'error': 'Prompt must be at least 10 characters'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Prompt must be at least 10 characters"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if len(prompt) > 5000:
-            return Response({'error': 'Prompt must be less than 5000 characters'},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "Prompt must be less than 5000 characters"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        # ── Credit check ──────────────────────────────────────────────────────
+        # ── Credit check and atomic deduction ────────────────────────────────
         try:
-            user_credits = UserCredits.objects.get(user=request.user)
-            if user_credits.credits <= 0:
-                return Response({'error': 'NO_CREDITS'},
-                                status=status.HTTP_402_PAYMENT_REQUIRED)
+            with transaction.atomic():
+                user_credits = UserCredits.objects.select_for_update().get(
+                    user=request.user
+                )
+                if user_credits.credits <= 0:
+                    return Response(
+                        {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
+                    )
+                # Deduct credit atomically - will be rolled back if generation fails
+                user_credits.credits -= 1
+                user_credits.total_used += 1
+                user_credits.save()
         except UserCredits.DoesNotExist:
-            return Response({'error': 'NO_CREDITS'},
-                            status=status.HTTP_402_PAYMENT_REQUIRED)
-
-        # ── Deduct 1 credit atomically before generation starts ───────────────
-        with transaction.atomic():
-            UserCredits.objects.filter(user=request.user).update(
-                credits=F('credits') - 1,
-                total_used=F('total_used') + 1
+            return Response(
+                {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
             )
 
         # ── Existing files — edit mode ────────────────────────────────────────
         # Frontend sends current files when user is editing an existing project
-        existing_files = request.data.get('existing_files', None)
+        existing_files = request.data.get("existing_files", None)
 
         # ── Create session record ─────────────────────────────────────────────
         session = GenerationSession.objects.create(
@@ -418,31 +449,43 @@ class GenerateView(APIView):
             prompt=prompt,
             output_type=output_type,
             style_preset=style_preset,
-            status='generating',
+            status="generating",
             credits_used=1,
         )
 
         # ── SSE generator ─────────────────────────────────────────────────────
         def stream_response():
             try:
-                if selected_model == 'trinity':
+                if selected_model == "trinity":
                     # Trinity as base model (High speed, high quality)
-                    client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
-                elif selected_model == 'gpt-oss':
-                    client = OpenRouterBuilderClient(model='meta-llama/llama-3.1-405b-instruct')
-                elif selected_model == 'nemotron':
-                    client = OpenRouterBuilderClient(model='nvidia/llama-3.1-nemotron-70b-instruct')
-                elif selected_model == 'stepfun':
-                    client = OpenRouterBuilderClient(model='stepfun/step-3.5-flash')
-                elif selected_model == 'glm':
-                    client = OpenRouterBuilderClient(model='glm/glm-4.5-air')
-                elif selected_model == 'hunter':
-                    client = OpenRouterBuilderClient(model='google/gemini-2.0-flash-exp:free')
-                elif selected_model == 'healer':
-                    client = OpenRouterBuilderClient(model='google/gemini-2.0-pro-exp-02-05:free')
+                    client = OpenRouterBuilderClient(
+                        model="arcee-ai/trinity-large-preview:free"
+                    )
+                elif selected_model == "gpt-oss":
+                    client = OpenRouterBuilderClient(
+                        model="meta-llama/llama-3.1-405b-instruct"
+                    )
+                elif selected_model == "nemotron":
+                    client = OpenRouterBuilderClient(
+                        model="nvidia/llama-3.1-nemotron-70b-instruct"
+                    )
+                elif selected_model == "stepfun":
+                    client = OpenRouterBuilderClient(model="stepfun/step-3.5-flash")
+                elif selected_model == "glm":
+                    client = OpenRouterBuilderClient(model="glm/glm-4.5-air")
+                elif selected_model == "hunter":
+                    client = OpenRouterBuilderClient(
+                        model="google/gemini-2.0-flash-exp:free"
+                    )
+                elif selected_model == "healer":
+                    client = OpenRouterBuilderClient(
+                        model="google/gemini-2.0-pro-exp-02-05:free"
+                    )
                 else:
                     # Fallback to Trinity
-                    client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
+                    client = OpenRouterBuilderClient(
+                        model="arcee-ai/trinity-large-preview:free"
+                    )
 
                 full_raw_text = ""
 
@@ -468,34 +511,46 @@ class GenerateView(APIView):
                 # ── Persist completed session to DB ───────────────────────────
                 try:
                     files = client.parse_multi_file_output(full_raw_text)
-                    session.files        = files
+                    session.files = files
                     session.raw_response = full_raw_text
-                    session.explanation  = f"Generated using {selected_model.capitalize()}."
-                    session.status       = 'done'
+                    session.explanation = (
+                        f"Generated using {selected_model.capitalize()}."
+                    )
+                    session.status = "done"
                     session.save()
                 except Exception as save_err:
                     logger.error(f"Session save error: {save_err}")
 
             except Exception as e:
-                logger.error(
-                    f"Generation error for {request.user.username}: {e}"
-                )
-                session.status = 'error'
+                logger.error(f"Generation error for {request.user.username}: {e}")
+                session.status = "error"
                 session.save()
+                
+                # Restore credits on failure - rollback the deducted credit
+                try:
+                    with transaction.atomic():
+                        UserCredits.objects.filter(user=request.user).update(
+                            credits=F('credits') + 1,
+                            total_used=F('total_used') - 1
+                        )
+                        logger.info(f"Credit restored for user {request.user.username} due to generation failure")
+                except Exception as rollback_err:
+                    logger.error(f"Failed to restore credits: {rollback_err}")
+                
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
         # ── StreamingHttpResponse ─────────────────────────────────────────────
         response = StreamingHttpResponse(
             stream_response(),
-            content_type='text/event-stream',
+            content_type="text/event-stream",
         )
         # Prevents buffering on Nginx, Coolify, and Cloudflare
-        response['Cache-Control']     = 'no-cache, no-transform'
-        response['X-Accel-Buffering'] = 'no'
-        response['Content-Encoding']  = 'identity'
-        response['Gzip']              = 'off'
-        response['Connection']        = 'keep-alive'
-        
+        response["Cache-Control"] = "no-cache, no-transform"
+        response["X-Accel-Buffering"] = "no"
+        response["Content-Encoding"] = "identity"
+        response["Gzip"] = "off"
+        response["Connection"] = "keep-alive"
+
         return response
 
 
@@ -516,14 +571,11 @@ class SessionDetailView(APIView):
 
     def get(self, request, session_id):
         try:
-            session = GenerationSession.objects.get(
-                id=session_id, user=request.user
-            )
+            session = GenerationSession.objects.get(id=session_id, user=request.user)
             return Response(GenerationSessionSerializer(session).data)
         except GenerationSession.DoesNotExist:
             return Response(
-                {'error': 'Session not found'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
 
@@ -534,16 +586,14 @@ class DeleteSessionView(APIView):
 
     def delete(self, request, session_id):
         try:
-            session = GenerationSession.objects.get(
-                id=session_id, user=request.user
-            )
+            session = GenerationSession.objects.get(id=session_id, user=request.user)
             session.delete()
-            return Response({'success': True})
+            return Response({"success": True})
         except GenerationSession.DoesNotExist:
             return Response(
-                {'error': 'Session not found'},
-                status=status.HTTP_404_NOT_FOUND
+                {"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND
             )
+
 
 class ImageProxyView(APIView):
     """
@@ -552,38 +602,39 @@ class ImageProxyView(APIView):
     can load them (null-origin CORS restriction bypass).
     AllowAny — no auth needed, images are public.
     """
+
     permission_classes = [AllowAny]
 
     # Allowlist of domains the proxy will fetch from
     # Prevents your server being used as an open proxy
     ALLOWED_DOMAINS = {
-        'loremflickr.com',
-        'picsum.photos',
-        'images.unsplash.com',
-        'source.unsplash.com',
-        'live.staticflickr.com',      # loremflickr pulls from Flickr CDN
-        'farm1.staticflickr.com',
-        'farm2.staticflickr.com',
-        'farm3.staticflickr.com',
-        'farm4.staticflickr.com',
-        'farm5.staticflickr.com',
-        'farm6.staticflickr.com',
-        'farm7.staticflickr.com',
-        'farm8.staticflickr.com',
-        'farm9.staticflickr.com',
-        'c1.staticflickr.com',
-        'c2.staticflickr.com',
-        'c3.staticflickr.com',
-        'c4.staticflickr.com',
-        'c5.staticflickr.com',
-        'c6.staticflickr.com',
-        'c7.staticflickr.com',
-        'c8.staticflickr.com',
+        "loremflickr.com",
+        "picsum.photos",
+        "images.unsplash.com",
+        "source.unsplash.com",
+        "live.staticflickr.com",  # loremflickr pulls from Flickr CDN
+        "farm1.staticflickr.com",
+        "farm2.staticflickr.com",
+        "farm3.staticflickr.com",
+        "farm4.staticflickr.com",
+        "farm5.staticflickr.com",
+        "farm6.staticflickr.com",
+        "farm7.staticflickr.com",
+        "farm8.staticflickr.com",
+        "farm9.staticflickr.com",
+        "c1.staticflickr.com",
+        "c2.staticflickr.com",
+        "c3.staticflickr.com",
+        "c4.staticflickr.com",
+        "c5.staticflickr.com",
+        "c6.staticflickr.com",
+        "c7.staticflickr.com",
+        "c8.staticflickr.com",
     }
 
     def get(self, request):
 
-        url = request.query_params.get('url', '').strip()
+        url = request.query_params.get("url", "").strip()
         logger.info(f"ImageProxy: Requested URL: {url}")
 
         if not url:
@@ -591,46 +642,80 @@ class ImageProxyView(APIView):
             return HttpResponse(status=400)
 
         # Security: only allow https
-        if not url.startswith('https://'):
+        if not url.startswith("https://"):
             logger.warning(f"ImageProxy: Non-HTTPS URL blocked: {url}")
             return HttpResponse(status=403)
 
-        # Security: only allow known image domains
-        domain = urlparse(url).netloc.lstrip('www.')
-        if not any(url.startswith(f'https://{d}') or
-                   url.startswith(f'https://www.{d}') or
-                   domain.endswith(d)
-                   for d in self.ALLOWED_DOMAINS):
-            logger.warning(f"ImageProxy: Domain blocked: {domain} for URL: {url}")
-            return HttpResponse(status=403)
+        # Security: only allow known image domains (improved validation)
+        # Use proper domain extraction to prevent subdomain attacks
+        try:
+            from tldextract import tldextract
+            extracted = tldextract.extract(url)
+            # Get the registered domain (e.g., "unsplash.com" from "images.unsplash.com")
+            registered_domain = extracted.registered_domain
+            
+            # Check if the registered domain is in our allowed list
+            allowed = False
+            for allowed_domain in self.ALLOWED_DOMAINS:
+                # Exact match or subdomain of an allowed domain
+                if registered_domain == allowed_domain or registered_domain.endswith('.' + allowed_domain):
+                    allowed = True
+                    break
+            
+            if not allowed:
+                logger.warning(f"ImageProxy: Domain blocked: {registered_domain} for URL: {url}")
+                return HttpResponse(status=403)
+                
+        except ImportError:
+            # Fallback: use basic urlparse (less secure but works without tldextract)
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            # Remove www. prefix for comparison
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            # Check exact domain match or subdomain
+            allowed = False
+            for allowed_domain in self.ALLOWED_DOMAINS:
+                if domain == allowed_domain or domain.endswith('.' + allowed_domain):
+                    allowed = True
+                    break
+            
+            if not allowed:
+                logger.warning(f"ImageProxy: Domain blocked: {domain} for URL: {url}")
+                return HttpResponse(status=403)
 
         try:
             resp = ext_requests.get(
                 url,
                 timeout=15,
                 headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                    'Accept': 'image/*,*/*',
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                    "Accept": "image/*,*/*",
                 },
                 allow_redirects=True,
             )
 
-            logger.info(f"ImageProxy: Unsplash/External response status: {resp.status_code} for {url}")
+            logger.info(
+                f"ImageProxy: Unsplash/External response status: {resp.status_code} for {url}"
+            )
 
             if resp.status_code != 200:
                 return HttpResponse(status=resp.status_code)
 
-            content_type = resp.headers.get('Content-Type', 'image/jpeg')
+            content_type = resp.headers.get("Content-Type", "image/jpeg")
             logger.info(f"ImageProxy: Content-Type: {content_type}")
 
             # Only serve actual images
-            if not content_type.startswith('image/'):
-                logger.warning(f"ImageProxy: Non-image content type blocked: {content_type}")
+            if not content_type.startswith("image/"):
+                logger.warning(
+                    f"ImageProxy: Non-image content type blocked: {content_type}"
+                )
                 return HttpResponse(status=403)
 
             response = HttpResponse(resp.content, content_type=content_type)
-            response['Cache-Control'] = 'public, max-age=3600'
-            response['Access-Control-Allow-Origin'] = '*'
+            response["Cache-Control"] = "public, max-age=3600"
+            response["Access-Control-Allow-Origin"] = "*"
             return response
 
         except ext_requests.exceptions.Timeout:
@@ -655,7 +740,7 @@ def get_boilerplate_files(output_type, project_name="my-website"):
             "scripts": {
                 "dev": "vite",
                 "build": "vite build",
-                "preview": "vite preview"
+                "preview": "vite preview",
             },
             "dependencies": {
                 "react": "^18.2.0",
@@ -664,7 +749,7 @@ def get_boilerplate_files(output_type, project_name="my-website"):
                 "framer-motion": "^10.12.16",
                 "react-icons": "^4.11.0",
                 "clsx": "^2.0.0",
-                "tailwind-merge": "^2.0.0"
+                "tailwind-merge": "^2.0.0",
             },
             "devDependencies": {
                 "@types/react": "^18.2.15",
@@ -673,10 +758,12 @@ def get_boilerplate_files(output_type, project_name="my-website"):
                 "autoprefixer": "^10.4.14",
                 "postcss": "^8.4.27",
                 "tailwindcss": "^3.3.3",
-                "vite": "^4.4.5"
-            }
+                "vite": "^4.4.5",
+            },
         }
-        boilerplate.append({"name": "package.json", "content": json.dumps(package_json, indent=2)})
+        boilerplate.append(
+            {"name": "package.json", "content": json.dumps(package_json, indent=2)}
+        )
 
         # vite.config.js
         vite_config = "import { defineConfig } from 'vite'\nimport react from '@vitejs/plugin-react'\n\nexport default defineConfig({\n  plugins: [react()],\n})"
@@ -774,9 +861,7 @@ class DownloadZipView(APIView):
     def get(self, request, session_id):
         from .services.image_utils import restore_files
 
-        session = get_object_or_404(
-            GenerationSession, id=session_id, user=request.user
-        )
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
         # 1. Restore original image URLs (proxy removal)
         clean_files = restore_files(session.files)
 
@@ -785,7 +870,9 @@ class DownloadZipView(APIView):
 
         # Filter out boilerplate files that might already exist in session
         existing_names = {f["name"] for f in clean_files}
-        final_files = clean_files + [b for b in boilerplate if b["name"] not in existing_names]
+        final_files = clean_files + [
+            b for b in boilerplate if b["name"] not in existing_names
+        ]
 
         # 3. Create ZIP
         buffer = io.BytesIO()
@@ -821,23 +908,23 @@ class PushToGithubView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        session = get_object_or_404(
-            GenerationSession, id=session_id, user=request.user
-        )
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
         # 1. Restore original image URLs
         clean_files = restore_files(session.files)
 
         # 2. Inject boilerplate
         boilerplate = get_boilerplate_files(session.output_type, session.project_name)
         existing_names = {f["name"] for f in clean_files}
-        final_files = clean_files + [b for b in boilerplate if b["name"] not in existing_names]
+        final_files = clean_files + [
+            b for b in boilerplate if b["name"] not in existing_names
+        ]
 
         headers = {
             "Authorization": f"token {github_token}",
             "Accept": "application/vnd.github.v3+json",
         }
 
-        # 1. Get username
+        # 1. Get username and validate token scopes
         try:
             user_resp = req.get("https://api.github.com/user", headers=headers)
             if user_resp.status_code != 200:
@@ -845,7 +932,15 @@ class PushToGithubView(APIView):
                     {"error": "Invalid GitHub token or authentication failed."},
                     status=status.HTTP_401_UNAUTHORIZED,
                 )
-            username = user_resp.json()["login"]
+            user_data = user_resp.json()
+            username = user_data["login"]
+            
+            # Check token scopes - need 'repo' scope for full write access
+            scopes = user_resp.headers.get('X-OAuth-Scopes', '').split(', ')
+            if 'repo' not in scopes:
+                # Also check for token type - classic tokens have scopes, fine-grained have different structure
+                # For now, warn but allow if no clear scope info
+                logger.warning(f"GitHub token may lack repo scope. Scopes: {scopes}")
         except Exception as e:
             return Response(
                 {"error": f"Failed to connect to GitHub: {str(e)}"},
@@ -868,7 +963,9 @@ class PushToGithubView(APIView):
                 # GitHub API requires the SHA of the file if it already exists for updates
                 file_url = f"https://api.github.com/repos/{username}/{repo_name}/contents/{path}"
                 get_resp = req.get(file_url, headers=headers)
-                sha = get_resp.json().get("sha") if get_resp.status_code == 200 else None
+                sha = (
+                    get_resp.json().get("sha") if get_resp.status_code == 200 else None
+                )
 
                 put_data = {
                     "message": f"Add {path} via AI Builder",
