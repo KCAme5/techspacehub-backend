@@ -85,103 +85,90 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             detected_files = set()       # files already reported as progress
             last_step      = ""          # last step marker text
 
-            # ── Line buffer — we read raw bytes, split on \n ourselves ────────
-            # Using iter_lines(chunk_size=None) with chunk_size=1 would be
-            # stream-safe; instead we iterate iter_content byte-by-byte so the
-            # OS kernel doesn't buffer a large chunk before handing it to us.
-            line_buf = ""
-
-            for raw_chunk in resp.iter_content(chunk_size=1):
-                if not raw_chunk:
+            # ── Stream line-by-line using network-driven chunks ───────────────
+            # chunk_size=None lets urllib3/TCP decide when to deliver data,
+            # avoiding Python-level buffering while staying efficient.
+            for raw_line in resp.iter_lines(chunk_size=None):
+                if not raw_line:
                     continue
 
-                char = raw_chunk.decode("utf-8", errors="replace")
-                line_buf += char
+                decoded = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
 
-                # Only process when we have a complete SSE line
-                if "\n" not in line_buf:
+                if not decoded.startswith("data: "):
                     continue
 
-                lines = line_buf.split("\n")
-                line_buf = lines[-1]        # keep incomplete tail
+                chunk_str = decoded[6:].strip()
+                if chunk_str == "[DONE]":
+                    break
 
-                for line in lines[:-1]:
-                    line = line.strip()
-                    if not line or not line.startswith("data: "):
+                try:
+                    chunk_data = json.loads(chunk_str)
+                    token = (
+                        chunk_data.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("content", "")
+                    )
+                    if not token:
                         continue
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
 
-                    chunk_str = line[6:]
-                    if chunk_str.strip() == "[DONE]":
-                        break
-
-                    try:
-                        chunk_data = json.loads(chunk_str)
-                        token = (
-                            chunk_data.get("choices", [{}])[0]
-                            .get("delta", {})
-                            .get("content", "")
-                        )
-                        if not token:
-                            continue
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
-
-                    # ── Meta-tag state machine ─────────────────────────────────
-                    # Every single token flows through this filter BEFORE going
-                    # to the code editor, so reasoning text never leaks.
-                    pending = token
-                    while pending:
-                        if in_meta_block:
-                            close_match = META_CLOSE.search(pending)
-                            if close_match:
-                                in_meta_block = False
-                                if meta_tag_name == "think":
-                                    yield self._sse({"progress": "Generating code..."})
-                                pending = pending[close_match.end():]
-                            else:
-                                # Everything is still inside the meta block
-                                yield self._sse({"thinking": pending})
-                                pending = ""
+                # ── Meta-tag state machine ─────────────────────────────────
+                # Every single token flows through this filter BEFORE going
+                # to the code editor, so reasoning text never leaks.
+                pending = token
+                while pending:
+                    if in_meta_block:
+                        close_match = META_CLOSE.search(pending)
+                        if close_match:
+                            in_meta_block = False
+                            if meta_tag_name == "think":
+                                yield self._sse({"progress": "Generating code..."})
+                            pending = pending[close_match.end():]
                         else:
-                            open_match = META_OPEN.search(pending)
-                            if open_match:
-                                before = pending[:open_match.start()]
-                                if before:
-                                    full_response += before
-                                    stream_window += before
-                                    yield self._sse({"chunk": before})
-                                in_meta_block = True
-                                meta_tag_name = open_match.group(1).lower()
-                                yield self._sse({"progress": "Model is reasoning..."})
-                                pending = pending[open_match.end():]
-                            else:
-                                # Pure code token
-                                full_response += pending
-                                stream_window += pending
-                                yield self._sse({"chunk": pending})
-                                pending = ""
+                            # Everything is still inside the meta block
+                            yield self._sse({"thinking": pending})
+                            pending = ""
+                    else:
+                        open_match = META_OPEN.search(pending)
+                        if open_match:
+                            before = pending[:open_match.start()]
+                            if before:
+                                full_response += before
+                                stream_window += before
+                                yield self._sse({"chunk": before})
+                            in_meta_block = True
+                            meta_tag_name = open_match.group(1).lower()
+                            yield self._sse({"progress": "Model is reasoning..."})
+                            pending = pending[open_match.end():]
+                        else:
+                            # Pure code token
+                            full_response += pending
+                            stream_window += pending
+                            yield self._sse({"chunk": pending})
+                            pending = ""
 
-                    # ── Keep window bounded ────────────────────────────────────
-                    if len(stream_window) > 500:
-                        stream_window = stream_window[-500:]
+                # ── Keep window bounded ────────────────────────────────────
+                if len(stream_window) > 500:
+                    stream_window = stream_window[-500:]
 
-                    # ── Step marker detection ──────────────────────────────────
-                    step_m = re.search(r'---\s*step:\s*(.*?)\s*---', stream_window, re.IGNORECASE)
-                    if step_m:
-                        step_text = step_m.group(1).strip()
-                        if step_text and step_text != last_step:
-                            last_step = step_text
-                            yield self._sse({"progress": step_text})
+                # ── Step marker detection ──────────────────────────────────
+                step_m = re.search(r'---\s*step:\s*(.*?)\s*---', stream_window, re.IGNORECASE)
+                if step_m:
+                    step_text = step_m.group(1).strip()
+                    if step_text and step_text != last_step:
+                        last_step = step_text
+                        yield self._sse({"progress": step_text})
 
-                    # ── File marker detection (fallback) ───────────────────────
-                    file_matches = marker_regex.findall(stream_window)
-                    if file_matches:
-                        latest_file = file_matches[-1].strip().lower()
-                        if latest_file not in detected_files:
-                            detected_files.add(latest_file)
-                            if latest_file not in last_step.lower():
-                                action = "Editing" if is_edit else "Writing"
-                                yield self._sse({"progress": f"{action} {latest_file}..."})
+                # ── File marker detection (fallback) ───────────────────────
+                file_matches = marker_regex.findall(stream_window)
+                if file_matches:
+                    latest_file = file_matches[-1].strip().lower()
+                    if latest_file not in detected_files:
+                        detected_files.add(latest_file)
+                        if latest_file not in last_step.lower():
+                            action = "Editing" if is_edit else "Writing"
+                            yield self._sse({"progress": f"{action} {latest_file}..."})
 
             # ── Post-stream cleanup ────────────────────────────────────────────
             yield self._sse({"progress": "Finalizing build..."})
