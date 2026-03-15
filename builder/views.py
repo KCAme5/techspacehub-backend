@@ -309,11 +309,17 @@ class EnhancePromptView(APIView):
             return self._local_enhance(prompt)
 
         system = (
-            "You are a prompt engineer for an AI website builder. "
-            "Rewrite the user's prompt into a detailed, specific build instruction. "
-            "Include: exact sections needed, realistic content (real product names/prices if relevant), "
-            "color scheme, image suggestions using picsum.photos URLs, interactive features. "
-            "Return ONLY the rewritten prompt. No explanation. No preamble. Just the improved prompt text."
+            "You are a Senior Technical Product Manager & UI/UX Designer at a world-class digital agency. "
+            "Your goal is to transform a simple user request into a DETAILED, HIGH-FIDELITY technical specification for an AI coder. "
+            "\n\nFOLLOW THESE CORE PRINCIPLES:"
+            "\n1. DEPTH: Break the request into at least 4-6 specialized, high-converting sections."
+            "\n2. AESTHETICS: Define a sophisticated, premium color palette (using HEX codes) and a modern typography style."
+            "\n3. IMAGES: STOP using generic placeholders or picsum URLs. Instead, describe high-quality professional photography keywords "
+            "that the builder can map to Unsplash IDs (e.g., 'A professional, high-resolution shot of a minimalist office with warm lighting')."
+            "\n4. CONTENT: Write REAL, compelling marketing copy. Do not use 'Lorem Ipsum'. Create specific service names, prices, and features."
+            "\n5. INTERACTIVITY: Include specific modern features like Glassmorphism, Framer Motion hover effects, smooth scroll, and dark-mode transitions."
+            "\n6. COMPONENT ARCHITECTURE: Suggest specific React components or layout structures if relevant."
+            "\n\nReturn ONLY the rewritten prompt. No explanation. No preamble. No markdown blocks. Just the improved, professional prompt text."
         )
 
         try:
@@ -335,18 +341,29 @@ class EnhancePromptView(APIView):
             return self._local_enhance(prompt)
 
     def _local_enhance(self, prompt: str) -> str:
-        """Fallback enhancement without AI."""
+        """Robust fallback enhancement without AI side-effects."""
         enhanced     = prompt
         prompt_lower = prompt.lower()
 
-        if not any(w in prompt_lower for w in ["responsive", "mobile"]):
-            enhanced += "\n\nMust be fully responsive for mobile, tablet, and desktop."
-        if not any(w in prompt_lower for w in ["color", "colors", "theme"]):
-            enhanced += "\n\nUse a modern, cohesive color scheme with high contrast."
-        if not any(w in prompt_lower for w in ["navigation", "navbar", "menu"]):
-            enhanced += "\n\nInclude a clean navigation bar with smooth scroll to sections."
-        if not any(w in prompt_lower for w in ["image", "photo", "visual"]):
-            enhanced += "\n\nInclude relevant images using real Unsplash photo URLs."
+        extra_specs = []
+
+        if not any(w in prompt_lower for w in ["responsive", "mobile", "device"]):
+            extra_specs.append("Ensure the layout is fully responsive, looking pixel-perfect on mobile (iPhone 14), tablet (iPad Pro), and 4k desktops.")
+
+        if not any(w in prompt_lower for w in ["color", "colors", "theme", "aesthetic"]):
+            extra_specs.append("Use a premium, cohesive color palette with deep backgrounds (#0D1214), high-contrast accents (#48CAE4), and soft readability levels.")
+
+        if not any(w in prompt_lower for w in ["navigation", "navbar", "menu", "header"]):
+            extra_specs.append("Include a sticky, glassmorphism-style navigation bar with smooth-scroll links and a prominent Call-to-Action button.")
+
+        if not any(w in prompt_lower for w in ["image", "photo", "visual", "photography"]):
+            extra_specs.append("Use high-quality, professional photography from the Unsplash library. Avoid generic placeholders or picsum photos.")
+
+        if not any(w in prompt_lower for w in ["modern", "animation", "motion", "ui"]):
+            extra_specs.append("Implement subtle micro-animations (fade-ins, hover lifts) and modern UI elements like cards with soft shadows and glassmorphism overlays.")
+
+        if extra_specs:
+            enhanced += "\n\nADDITIONAL TECHNICAL SPECIFICATIONS:\n- " + "\n- ".join(extra_specs)
 
         return enhanced.strip()
 
