@@ -94,6 +94,8 @@ STRICT PROTOCOL:
         # Also strip unclosed tags at the start/end
         clean_text = re.sub(r'<(?:think|thought|description|tool_call)>.*$', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r'^.*?</(?:think|thought|description|tool_call)>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
+        # Strip step markers completely
+        clean_text = re.sub(r'---\s*step:.*?---', '', clean_text, flags=re.IGNORECASE)
 
         files = []
         # More resilient marker pattern: handles --- filename ---, **filename**, [filename], etc.

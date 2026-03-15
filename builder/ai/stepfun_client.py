@@ -173,11 +173,12 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             # ── Post-stream cleanup ────────────────────────────────────────────
             yield self._sse({"progress": "Finalizing build..."})
 
-            # Final strip of any leftover meta tags (shouldn't happen but safe)
+            # Final strip of any leftover meta tags and step markers
             full_response = re.sub(
                 r'<(?:think|thought|tool_call|description)>.*?</(?:think|thought|tool_call|description)>',
                 '', full_response, flags=re.DOTALL | re.IGNORECASE
-            ).strip()
+            )
+            full_response = re.sub(r'---\s*step:.*?---', '', full_response, flags=re.IGNORECASE).strip()
 
             files = self.parse_multi_file_output(full_response)
 
