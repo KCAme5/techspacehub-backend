@@ -1,3 +1,4 @@
+import re
 import os
 import json
 import logging
@@ -87,6 +88,18 @@ class GroqBuilderClient(BaseWebsiteGenerator):
                 token = chunk.choices[0].delta.content
                 if token:
                     full_response += token
+                    
+                    # Detect "--- step: [Description] ---" markers in real-time
+                    # We look for the most recent marker if it was just completed
+                    if "--- step:" in token or "---" in token:
+                        step_match = re.search(r'--- step:\s*(.*?)\s*---', full_response[max(0, len(full_response)-200):])
+                        if step_match:
+                            step_text = step_match.group(1).strip()
+                            # Avoid re-emitting the same step
+                            if not hasattr(self, '_last_step') or self._last_step != step_text:
+                                yield self._sse({"progress": step_text})
+                                self._last_step = step_text
+
                     yield self._sse({"chunk": token})
 
             yield self._sse({"progress": "Parsing files..."})
@@ -99,14 +112,20 @@ class GroqBuilderClient(BaseWebsiteGenerator):
 
             # In edit mode: merge changed files into existing files
             if is_edit_mode and existing_files:
-                merged = {f['name']: f['content'] for f in existing_files}
+                # Use lowercase keys for deterministic merging
+                merged = {f['name'].lower(): f['content'] for f in existing_files}
                 for f in new_files:
-                    merged[f['name']] = f['content']
+                    merged[f['name'].lower()] = f['content']
                 final_files = [{"name": k, "content": v} for k, v in merged.items()]
                 yield self._sse({"progress": f"Updated {len(new_files)} file(s)"})
             else:
                 final_files = new_files
                 yield self._sse({"progress": f"Complete — {len(final_files)} file(s) generated"})
+
+            # Extract build description for the frontend
+            explanation = self.extract_description(full_response)
+            if explanation:
+                yield self._sse({"explanation": explanation})
 
             yield self._sse({"done": True, "files": final_files})
 

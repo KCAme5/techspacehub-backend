@@ -127,18 +127,29 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                     full_response += token
                     yield self._sse({"chunk": token})
                     
-                    # ── Marker Detection Logic ──────────────────────────────
+                    # ── Step Detection Logic ──────────────────────────────
                     stream_window += token
-                    if len(stream_window) > 200: # Keep window small but enough for a marker
-                        stream_window = stream_window[-200:]
+                    if len(stream_window) > 300: # Keep window enough for step marker
+                        stream_window = stream_window[-300:]
                     
+                    # Check for explicit steps: --- step: [Description] ---
+                    step_match = re.search(r'--- step:\s*(.*?)\s*---', stream_window)
+                    if step_match:
+                        step_text = step_match.group(1).strip()
+                        if not hasattr(self, '_last_step') or self._last_step != step_text:
+                            yield self._sse({"progress": step_text})
+                            self._last_step = step_text
+
+                    # Fallback marker detection for file writing
                     matches = marker_regex.findall(stream_window)
                     if matches:
                         latest_file = matches[-1].strip().lower()
                         if latest_file not in detected_files:
                             detected_files.add(latest_file)
-                            action = "Editing" if is_edit else "Writing"
-                            yield self._sse({"progress": f"{action} {latest_file}..."})
+                            # Only emit if not redundant with an explicit step
+                            if not hasattr(self, '_last_step') or latest_file not in self._last_step.lower():
+                                action = "Editing" if is_edit else "Writing"
+                                yield self._sse({"progress": f"{action} {latest_file}..."})
 
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
@@ -154,12 +165,18 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 files = [{"name": "index.html", "content": full_response or "<!-- Empty response from model -->"}]
 
             if is_edit and existing_files:
-                merged = {f["name"]: f["content"] for f in existing_files}
+                # Use lowercase keys for deterministic merging
+                merged = {f["name"].lower(): f["content"] for f in existing_files}
                 for f in files:
-                    merged[f["name"]] = f["content"]
+                    merged[f["name"].lower()] = f["content"]
                 files = [{"name": k, "content": v} for k, v in merged.items()]
 
             yield self._sse({"progress": f"Complete — {len(files)} file(s) generated"})
+
+            # Extract build description for the frontend
+            explanation = self.extract_description(full_response)
+            if explanation:
+                yield self._sse({"explanation": explanation})
             yield self._sse({"done": True, "files": files})
 
         except requests.exceptions.Timeout:

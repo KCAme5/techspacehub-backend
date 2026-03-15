@@ -359,7 +359,7 @@ class GenerateView(APIView):
     def post(self, request):
 
         prompt         = request.data.get('prompt', '').strip()
-        output_type    = request.data.get('output_type', 'html')
+        output_type    = request.data.get('output_type', 'react')
         style_preset   = request.data.get('style_preset', '')
         selected_model = request.data.get('model', 'llama')
 
@@ -408,30 +408,24 @@ class GenerateView(APIView):
         # ── SSE generator ─────────────────────────────────────────────────────
         def stream_response():
             try:
-                if selected_model == 'stepfun':
-                    client = OpenRouterBuilderClient(model='stepfun/step-3.5-flash:free')
-                elif selected_model == 'trinity':
-                    client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
+                if selected_model == 'trinity':
+                    # Trinity as base model (High speed, high quality)
+                    client = GroqBuilderClient(model='llama-3.3-70b-versatile')
                 elif selected_model == 'gpt-oss':
-                    client = OpenRouterBuilderClient(model='openai/gpt-oss-120b')
-                elif selected_model == 'qwen-coder':
-                    client = OpenRouterBuilderClient(model='qwen/qwen3-coder:free')
+                    client = OpenRouterBuilderClient(model='meta-llama/llama-3.1-405b-instruct')
                 elif selected_model == 'nemotron':
-                    client = OpenRouterBuilderClient(model='nvidia/nemotron-3-super-120b-a12b:free')
+                    client = OpenRouterBuilderClient(model='nvidia/llama-3.1-nemotron-70b-instruct')
+                elif selected_model == 'stepfun':
+                    client = OpenRouterBuilderClient(model='stepfun/step-3.5-flash')
                 elif selected_model == 'glm':
-                    client = OpenRouterBuilderClient(model='z-ai/glm-4.5-air:free')
-                elif selected_model == 'mistral':
-                    client = OpenRouterBuilderClient(model='mistralai/mistral-small-3.1-24b-instruct:free')
-                elif selected_model == 'qwen-next':
-                    client = OpenRouterBuilderClient(model='qwen/qwen3-next-80b-a3b-instruct:free')
-                elif selected_model == 'gemma':
-                    client = OpenRouterBuilderClient(model='google/gemma-3-27b:free')
+                    client = OpenRouterBuilderClient(model='glm/glm-4.5-air')
                 elif selected_model == 'hunter':
-                    client = OpenRouterBuilderClient(model='openrouter/hunter-alpha')
+                    client = OpenRouterBuilderClient(model='google/gemini-2.0-flash-exp:free')
                 elif selected_model == 'healer':
-                    client = OpenRouterBuilderClient(model='openrouter/healer-alpha')
+                    client = OpenRouterBuilderClient(model='google/gemini-2.0-pro-exp-02-05:free')
                 else:
-                    client = GroqBuilderClient(model=selected_model)
+                    # Fallback to Trinity (Llama 3.3)
+                    client = GroqBuilderClient(model='llama-3.3-70b-versatile')
 
                 full_raw_text = ""
 
