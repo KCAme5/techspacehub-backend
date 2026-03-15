@@ -46,8 +46,6 @@ CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
 
 4. STYLING: Use Tailwind CSS for everything. Dark themes preferred.
 """
-"""
-
     def _build_edit_system_prompt(self):
         return """You are an EXPERT Frontend Engineer. The user wants to EDIT their existing website.
 
@@ -114,3 +112,9 @@ STRICT PROTOCOL:
                     files.append({"name": filename, "content": content.strip()})
 
         return files
+
+    @staticmethod
+    def extract_description(raw_text: str) -> str:
+        """Extract content inside <description>...</description> tags."""
+        match = re.search(r'<description>(.*?)</description>', raw_text, re.DOTALL | re.IGNORECASE)
+        return match.group(1).strip() if match else ""

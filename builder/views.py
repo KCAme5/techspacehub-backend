@@ -410,7 +410,7 @@ class GenerateView(APIView):
             try:
                 if selected_model == 'trinity':
                     # Trinity as base model (High speed, high quality)
-                    client = GroqBuilderClient(model='llama-3.3-70b-versatile')
+                    client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
                 elif selected_model == 'gpt-oss':
                     client = OpenRouterBuilderClient(model='meta-llama/llama-3.1-405b-instruct')
                 elif selected_model == 'nemotron':
@@ -424,8 +424,8 @@ class GenerateView(APIView):
                 elif selected_model == 'healer':
                     client = OpenRouterBuilderClient(model='google/gemini-2.0-pro-exp-02-05:free')
                 else:
-                    # Fallback to Trinity (Llama 3.3)
-                    client = GroqBuilderClient(model='llama-3.3-70b-versatile')
+                    # Fallback to Trinity
+                    client = OpenRouterBuilderClient(model='arcee-ai/trinity-large-preview:free')
 
                 full_raw_text = ""
 
