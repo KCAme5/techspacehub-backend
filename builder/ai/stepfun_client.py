@@ -11,10 +11,12 @@ logger = logging.getLogger(__name__)
 class OpenRouterBuilderClient(BaseWebsiteGenerator):
     """
     OpenRouter client — supports multiple models via OpenRouter aggregator.
-    Handles reasoning models that emit <think>...</think> blocks if present.
+    Handles reasoning models that emit <think>, <thought>, <tool_call>, or
+    <description> blocks; all are stripped from the output before it reaches
+    the code editor.
     """
 
-    def __init__(self, model="stepfun/step-3.5-flash:free"):
+    def __init__(self, model="arcee-ai/trinity-large-preview:free"):
         self.api_key  = os.environ.get("OPEN_ROUTER")
         self.model    = model
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
@@ -22,7 +24,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
     def _sse(self, payload: dict) -> str:
         return f"data: {json.dumps(payload)}\n\n"
 
-    def stream_generation(self, prompt: str, existing_files: list = None, output_type: str = 'react'):
+    def stream_generation(self, prompt: str, existing_files=None, output_type: str = 'react'):
         if not self.api_key:
             yield self._sse({"error": "OPEN_ROUTER API key missing. Set OPEN_ROUTER in environment."})
             return
@@ -34,9 +36,15 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
         model_display = self.model.split('/')[-1].replace(':free', '').upper()
         yield self._sse({"progress": f"Connecting to {model_display}..."})
 
-        full_response    = ""
-        in_think_block   = False  # track <think> reasoning sections
-        think_buffer     = ""     # accumulate think content
+        # ── Regex patterns compiled once ──────────────────────────────────────
+        # Detects ANY of the reasoning / tool-call wrappers the model may emit
+        META_OPEN  = re.compile(r'<(think|thought|tool_call|description)>', re.IGNORECASE)
+        META_CLOSE = re.compile(r'</(think|thought|tool_call|description)>', re.IGNORECASE)
+        # File marker: --- filename.ext --- or --- path/to/file.ext ---
+        marker_regex = re.compile(
+            r'(?:\n|^)(?:[-*#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z]{1,6})(?:\s*[-*#]{3,})',
+            re.IGNORECASE
+        )
 
         try:
             resp = requests.post(
@@ -69,95 +77,120 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
             yield self._sse({"progress": "Generating code..."})
 
-            marker_regex = re.compile(r'(?:\n|^)(?:[#\-\*]{3,}\s*)([\w\./\-\\]+)(?:\s*[#\-\*]{3,})', re.IGNORECASE)
-            
-            # To detect markers that might be split across chunks, we keep a small buffer
-            stream_window = ""
-            detected_files = set()
+            # ── State machine variables ───────────────────────────────────────
+            full_response  = ""          # only code content (no reasoning tags)
+            in_meta_block  = False       # True when inside any meta tag
+            meta_tag_name  = ""          # which tag opened the block
+            stream_window  = ""          # last 400 chars for marker detection
+            detected_files = set()       # files already reported as progress
+            last_step      = ""          # last step marker text
 
-            for line in resp.iter_lines():
-                if not line:
+            # ── Line buffer — we read raw bytes, split on \n ourselves ────────
+            # Using iter_lines(chunk_size=None) with chunk_size=1 would be
+            # stream-safe; instead we iterate iter_content byte-by-byte so the
+            # OS kernel doesn't buffer a large chunk before handing it to us.
+            line_buf = ""
+
+            for raw_chunk in resp.iter_content(chunk_size=1):
+                if not raw_chunk:
                     continue
 
-                decoded = line.decode("utf-8") if isinstance(line, bytes) else line
+                char = raw_chunk.decode("utf-8", errors="replace")
+                line_buf += char
 
-                if not decoded.startswith("data: "):
+                # Only process when we have a complete SSE line
+                if "\n" not in line_buf:
                     continue
 
-                chunk_str = decoded[6:]
-                if chunk_str.strip() == "[DONE]":
-                    break
+                lines = line_buf.split("\n")
+                line_buf = lines[-1]        # keep incomplete tail
 
-                try:
-                    chunk_data = json.loads(chunk_str)
-                    token = chunk_data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                    if not token:
+                for line in lines[:-1]:
+                    line = line.strip()
+                    if not line or not line.startswith("data: "):
                         continue
 
-                    # ── Handle reasoning model <think> blocks ─────────────────
-                    if "<think>" in token:
-                        in_think_block = True
-                        parts = token.split("<think>", 1)
-                        if parts[0]:
-                            full_response += parts[0]
-                            yield self._sse({"chunk": parts[0]})
-                            stream_window += parts[0]
-                        think_buffer = parts[1] if len(parts) > 1 else ""
-                        yield self._sse({"progress": "Model is reasoning..."})
+                    chunk_str = line[6:]
+                    if chunk_str.strip() == "[DONE]":
+                        break
+
+                    try:
+                        chunk_data = json.loads(chunk_str)
+                        token = (
+                            chunk_data.get("choices", [{}])[0]
+                            .get("delta", {})
+                            .get("content", "")
+                        )
+                        if not token:
+                            continue
+                    except (json.JSONDecodeError, KeyError, IndexError):
                         continue
 
-                    if "</think>" in token:
-                        in_think_block = False
-                        parts = token.split("</think>", 1)
-                        think_buffer += parts[0]
-                        yield self._sse({"progress": "Generating code..."})
-                        if len(parts) > 1 and parts[1]:
-                            full_response += parts[1]
-                            yield self._sse({"chunk": parts[1]})
-                            stream_window += parts[1]
-                        think_buffer = ""
-                        continue
+                    # ── Meta-tag state machine ─────────────────────────────────
+                    # Every single token flows through this filter BEFORE going
+                    # to the code editor, so reasoning text never leaks.
+                    pending = token
+                    while pending:
+                        if in_meta_block:
+                            close_match = META_CLOSE.search(pending)
+                            if close_match:
+                                in_meta_block = False
+                                if meta_tag_name == "think":
+                                    yield self._sse({"progress": "Generating code..."})
+                                pending = pending[close_match.end():]
+                            else:
+                                # Everything is still inside the meta block
+                                yield self._sse({"thinking": pending})
+                                pending = ""
+                        else:
+                            open_match = META_OPEN.search(pending)
+                            if open_match:
+                                before = pending[:open_match.start()]
+                                if before:
+                                    full_response += before
+                                    stream_window += before
+                                    yield self._sse({"chunk": before})
+                                in_meta_block = True
+                                meta_tag_name = open_match.group(1).lower()
+                                yield self._sse({"progress": "Model is reasoning..."})
+                                pending = pending[open_match.end():]
+                            else:
+                                # Pure code token
+                                full_response += pending
+                                stream_window += pending
+                                yield self._sse({"chunk": pending})
+                                pending = ""
 
-                    if in_think_block:
-                        think_buffer += token
-                        yield self._sse({"thinking": token})
-                        continue
+                    # ── Keep window bounded ────────────────────────────────────
+                    if len(stream_window) > 500:
+                        stream_window = stream_window[-500:]
 
-                    # ── Normal code token ─────────────────────────────────────
-                    full_response += token
-                    yield self._sse({"chunk": token})
-                    
-                    # ── Step Detection Logic ──────────────────────────────
-                    stream_window += token
-                    if len(stream_window) > 300: # Keep window enough for step marker
-                        stream_window = stream_window[-300:]
-                    
-                    # Check for explicit steps: --- step: [Description] ---
-                    step_match = re.search(r'--- step:\s*(.*?)\s*---', stream_window)
-                    if step_match:
-                        step_text = step_match.group(1).strip()
-                        if not hasattr(self, '_last_step') or self._last_step != step_text:
+                    # ── Step marker detection ──────────────────────────────────
+                    step_m = re.search(r'---\s*step:\s*(.*?)\s*---', stream_window, re.IGNORECASE)
+                    if step_m:
+                        step_text = step_m.group(1).strip()
+                        if step_text and step_text != last_step:
+                            last_step = step_text
                             yield self._sse({"progress": step_text})
-                            self._last_step = step_text
 
-                    # Fallback marker detection for file writing
-                    matches = marker_regex.findall(stream_window)
-                    if matches:
-                        latest_file = matches[-1].strip().lower()
+                    # ── File marker detection (fallback) ───────────────────────
+                    file_matches = marker_regex.findall(stream_window)
+                    if file_matches:
+                        latest_file = file_matches[-1].strip().lower()
                         if latest_file not in detected_files:
                             detected_files.add(latest_file)
-                            # Only emit if not redundant with an explicit step
-                            if not hasattr(self, '_last_step') or latest_file not in self._last_step.lower():
+                            if latest_file not in last_step.lower():
                                 action = "Editing" if is_edit else "Writing"
                                 yield self._sse({"progress": f"{action} {latest_file}..."})
 
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
-
+            # ── Post-stream cleanup ────────────────────────────────────────────
             yield self._sse({"progress": "Finalizing build..."})
 
-            # ── Strip any remaining <think> blocks ──────────
-            full_response = re.sub(r'<think>.*?</think>', '', full_response, flags=re.DOTALL).strip()
+            # Final strip of any leftover meta tags (shouldn't happen but safe)
+            full_response = re.sub(
+                r'<(?:think|thought|tool_call|description)>.*?</(?:think|thought|tool_call|description)>',
+                '', full_response, flags=re.DOTALL | re.IGNORECASE
+            ).strip()
 
             files = self.parse_multi_file_output(full_response)
 
@@ -165,7 +198,6 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 files = [{"name": "index.html", "content": full_response or "<!-- Empty response from model -->"}]
 
             if is_edit and existing_files:
-                # Use lowercase keys for deterministic merging
                 merged = {f["name"].lower(): f["content"] for f in existing_files}
                 for f in files:
                     merged[f["name"].lower()] = f["content"]
@@ -173,10 +205,10 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
             yield self._sse({"progress": f"Complete — {len(files)} file(s) generated"})
 
-            # Extract build description for the frontend
             explanation = self.extract_description(full_response)
             if explanation:
                 yield self._sse({"explanation": explanation})
+
             yield self._sse({"done": True, "files": files})
 
         except requests.exceptions.Timeout:
