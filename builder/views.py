@@ -463,23 +463,27 @@ class GenerateView(APIView):
                     )
                 elif selected_model == "gpt-oss":
                     client = OpenRouterBuilderClient(
-                        model="meta-llama/llama-3.1-405b-instruct"
+                        model="openai/gpt-oss-120b:free"
                     )
                 elif selected_model == "nemotron":
                     client = OpenRouterBuilderClient(
-                        model="nvidia/llama-3.1-nemotron-70b-instruct"
+                        model="nvidia/nemotron-3-super-120b-a12b:free"
                     )
                 elif selected_model == "stepfun":
                     client = OpenRouterBuilderClient(model="stepfun/step-3.5-flash")
                 elif selected_model == "glm":
-                    client = OpenRouterBuilderClient(model="glm/glm-4.5-air")
+                    client = OpenRouterBuilderClient(model="z-ai/glm-4.5-air:free")
                 elif selected_model == "hunter":
                     client = OpenRouterBuilderClient(
-                        model="google/gemini-2.0-flash-exp:free"
+                        model="openrouter/hunter-alpha"
                     )
                 elif selected_model == "healer":
                     client = OpenRouterBuilderClient(
-                        model="google/gemini-2.0-pro-exp-02-05:free"
+                        model="openrouter/healer-alpha"
+                    )
+                elif selected_model == "minimax":
+                    client = OpenRouterBuilderClient(
+                        model="minimax/minimax-m2.5:free"
                     )
                 else:
                     # Fallback to Trinity
