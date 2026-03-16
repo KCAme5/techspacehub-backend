@@ -46,6 +46,15 @@ CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
    photo-1518770660439-4636190af475 (Tech), photo-1542831371-29b0f74f9713 (Code), photo-1551288049-bebda4e38f71 (Metrics)
 
 4. STYLING: Use Tailwind CSS for everything. Dark themes preferred.
+
+5. VALIDATION: BEFORE COMPLETING, verify ALL files are complete and syntactically correct:
+   - Check all JSX files have matching opening and closing tags
+   - Check all React components export properly
+   - Check all imports reference existing files
+   - Ensure index.js properly mounts the App component with correct syntax:
+     const root = ReactDOM.createRoot(document.getElementById('root'));
+     root.render(<React.StrictMode><App /></React.StrstrictMode>);
+   - Do NOT leave any code incomplete or truncated
 """
     def _build_edit_system_prompt(self):
         return """You are an EXPERT Frontend Engineer. The user wants to EDIT their existing website.
@@ -76,13 +85,15 @@ STRICT PROTOCOL:
                 f"IMPORTANT: Make ONLY the minimal changes needed for this edit request.\n"
                 f"Preserve all working code exactly as is.\n"
                 f"Return ALL files (both changed and unchanged) using the --- filename --- marker format.\n"
-                f"Do NOT regenerate files that don't need changes - copy them unchanged.\n"
+                f"Do NOT regenerate files that don't need changes - copy them unchanged.\n\n"
+                f"VALIDATION: Check ALL files are complete before finishing. Fix any incomplete code."
             )
         else:
             return (
                 f"Build a complete, production-ready "
                 f"{'React app' if output_type == 'react' else 'HTML website'} "
-                f"for the following request:\n\n{prompt}"
+                f"for the following request:\n\n{prompt}\n\n"
+                f"IMPORTANT: Verify all files are complete and syntactically correct before completing."
             )
 
     @staticmethod
