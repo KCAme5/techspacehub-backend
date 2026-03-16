@@ -10,40 +10,46 @@ logger = logging.getLogger(__name__)
 
 class OpenRouterBuilderClient(BaseWebsiteGenerator):
     """
-    OpenRouter client — supports multiple models via OpenRouter aggregator.
-    Handles reasoning models that emit <think>, <thought>, <tool_call>, or
-    <description> blocks; all are stripped from the output before it reaches
-    the code editor.
+    OpenRouter client with proper real-time SSE streaming.
+    FIXED: Immediate token delivery, proper tag handling, no buffering.
     """
 
     def __init__(self, model="arcee-ai/trinity-large-preview:free"):
-        self.api_key  = os.environ.get("OPEN_ROUTER")
-        self.model    = model
+        self.api_key = os.environ.get("OPEN_ROUTER")
+        self.model = model
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
-    def _sse(self, payload: dict) -> str:
+    def _sse(self, payload):
+        """Format as SSE data line."""
         return f"data: {json.dumps(payload)}\n\n"
 
-    def stream_generation(self, prompt: str, existing_files=None, output_type: str = 'react'):
+    def stream_generation(self, prompt, existing_files=None, output_type="react"):
+        """
+        Stream generation with real-time token delivery.
+        Yields SSE events immediately as they arrive from API.
+        """
         if not self.api_key:
-            yield self._sse({"error": "OPEN_ROUTER API key missing. Set OPEN_ROUTER in environment."})
+            yield self._sse({"error": "OPEN_ROUTER API key missing"})
             return
 
         is_edit = bool(existing_files)
-        system  = self._build_edit_system_prompt() if is_edit else self._build_system_prompt(output_type)
-        user    = self._build_user_message(prompt, existing_files, output_type, is_edit)
+        system = (
+            self._build_edit_system_prompt()
+            if is_edit
+            else self._build_system_prompt(output_type)
+        )
+        user = self._build_user_message(prompt, existing_files, output_type, is_edit)
 
-        model_display = self.model.split('/')[-1].replace(':free', '').upper()
-        yield self._sse({"progress": f"Connecting to {model_display}..."})
+        model_display = self.model.split("/")[-1].replace(":free", "").upper()
+        yield self._sse({"progress": f"Initializing {model_display}..."})
 
-        # ── Regex patterns compiled once ──────────────────────────────────────
-        # Detects ANY of the reasoning / tool-call wrappers the model may emit
-        META_OPEN  = re.compile(r'<(think|thought|tool_call|description)>', re.IGNORECASE)
-        META_CLOSE = re.compile(r'</(think|thought|tool_call|description)>', re.IGNORECASE)
-        # File marker: --- filename.ext --- or --- path/to/file.ext ---
-        marker_regex = re.compile(
-            r'(?:\n|^)(?:[-*#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z]{1,6})(?:\s*[-*#]{3,})',
-            re.IGNORECASE
+        # Regex patterns
+        META_TAGS = re.compile(
+            r"<(/?)(think|thought|tool_call|description)>", re.IGNORECASE
+        )
+        FILE_MARKER = re.compile(
+            r"(?:\n|^)(?:[-=#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#]{3,})",
+            re.IGNORECASE,
         )
 
         try:
@@ -51,18 +57,19 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 self.base_url,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type":  "application/json",
-                    "HTTP-Referer":  "https://techspacehub.co.ke",
-                    "X-Title":       "TechSpaceHub Build by AI",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://techspacehub.co.ke",
+                    "X-Title": "TechSpaceHub",
+                    "Accept": "text/event-stream",
                 },
                 json={
-                    "model":       self.model,
-                    "messages":    [
+                    "model": self.model,
+                    "messages": [
                         {"role": "system", "content": system},
-                        {"role": "user",   "content": user},
+                        {"role": "user", "content": user},
                     ],
-                    "max_tokens":  16000,
-                    "stream":      True,
+                    "max_tokens": 16000,
+                    "stream": True,
                     "temperature": 0.3,
                 },
                 stream=True,
@@ -70,151 +77,160 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             )
 
             if not resp.ok:
-                error_text = resp.text
-                logger.error(f"OpenRouter HTTP error {resp.status_code}: {error_text}")
-                yield self._sse({"error": f"OpenRouter error {resp.status_code}: {error_text[:200]}"})
+                error_text = resp.text[:500]
+                logger.error(f"OpenRouter HTTP {resp.status_code}: {error_text}")
+                yield self._sse(
+                    {"error": f"API Error {resp.status_code}: {error_text}"}
+                )
                 return
 
-            yield self._sse({"progress": "Generating code..."})
+            yield self._sse({"progress": "Connected - streaming..."})
 
-            # ── State machine variables ───────────────────────────────────────
-            full_response  = ""          # only code content (no reasoning tags)
-            in_meta_block  = False       # True when inside any meta tag
-            meta_tag_name  = ""          # which tag opened the block
-            stream_window  = ""          # last 400 chars for marker detection
-            detected_files = set()       # files already reported as progress
-            last_step      = ""          # last step marker text
-            token_buffer   = ""          # buffer for partial meta tags
+            # Stream processing state
+            full_response = []
+            in_think_block = False
+            incomplete_buffer = ""
+            detected_files = set()
+            last_progress = ""
 
-            # ── Stream line-by-line using network-driven chunks ───────────────
-            # chunk_size=None lets urllib3/TCP decide when to deliver data,
-            # avoiding Python-level buffering while staying efficient.
-            for raw_line in resp.iter_lines(chunk_size=None):
-                if not raw_line:
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line:
                     continue
 
-                decoded = raw_line.decode("utf-8", errors="replace") if isinstance(raw_line, bytes) else raw_line
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8", errors="replace")
 
-                if not decoded.startswith("data: "):
+                line = line.strip()
+                if not line.startswith("data: "):
                     continue
 
-                chunk_str = decoded[6:].strip()
-                if chunk_str == "[DONE]":
+                data_str = line[6:].strip()
+                if data_str == "[DONE]":
                     break
 
                 try:
-                    chunk_data = json.loads(chunk_str)
+                    data = json.loads(data_str)
                     token = (
-                        chunk_data.get("choices", [{}])[0]
-                        .get("delta", {})
-                        .get("content", "")
+                        data.get("choices", [{}])[0].get("delta", {}).get("content", "")
                     )
                     if not token:
                         continue
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue
 
-                # ── Token Accumulation & Meta-tag state machine ───────────────
-                # Tokens can be split: "<th", "ink>". We must buffer to detect tags.
-                token_buffer += token
+                # Handle incomplete tags from previous chunk
+                if incomplete_buffer:
+                    token = incomplete_buffer + token
+                    incomplete_buffer = ""
 
-                while token_buffer:
-                    if in_meta_block:
+                # Process token
+                pos = 0
+                while pos < len(token):
+                    if in_think_block:
                         # Look for closing tag
-                        close_match = META_CLOSE.search(token_buffer)
-                        if close_match:
-                            in_meta_block = False
-                            if meta_tag_name == "think":
-                                yield self._sse({"progress": "Generating code..."})
-                            # Send everything before the close tag to thinking stream
-                            thinking_content = token_buffer[:close_match.start()]
-                            if thinking_content:
-                                yield self._sse({"thinking": thinking_content})
-                            token_buffer = token_buffer[close_match.end():]
-                        else:
-                            # Not closed yet.
-                            # We can safely stream up to the last '<' to thinking, 
-                            # holding back anything after '<' just in case it's the start of </...
-                            last_lt = token_buffer.rfind('<')
-                            if last_lt == -1:
-                                yield self._sse({"thinking": token_buffer})
-                                token_buffer = ""
-                            elif last_lt > 0:
-                                yield self._sse({"thinking": token_buffer[:last_lt]})
-                                token_buffer = token_buffer[last_lt:]
-                            break # Wait for more chunks to resolve '<'
+                        close_match = META_TAGS.search(token[pos:])
+                        if close_match and close_match.group(1) == "/":
+                            # Found closing tag
+                            think_content = token[pos : pos + close_match.start()]
+                            if think_content:
+                                yield self._sse({"thinking": think_content})
 
-                    else:
-                        # We are IN CODE land. Look for opening tags.
-                        open_match = META_OPEN.search(token_buffer)
-                        if open_match:
-                            before = token_buffer[:open_match.start()]
-                            if before:
-                                full_response += before
-                                stream_window += before
-                                yield self._sse({"chunk": before})
-
-                            in_meta_block = True
-                            meta_tag_name = open_match.group(1).lower()
-                            yield self._sse({"progress": "Model is reasoning..."})
-                            token_buffer = token_buffer[open_match.end():]
+                            in_think_block = False
+                            pos += close_match.end()
+                            yield self._sse({"progress": "Writing code..."})
                         else:
-                            # No complete opening tag found.
-                            # Check if the buffer ends with a partial tag like '<th'
-                            last_lt = token_buffer.rfind('<')
-                            if last_lt == -1:
-                                # Safe to flush entirely
-                                full_response += token_buffer
-                                stream_window += token_buffer
-                                yield self._sse({"chunk": token_buffer})
-                                token_buffer = ""
+                            # Check for partial closing tag at end
+                            remaining = token[pos:]
+                            partial_close = remaining.rfind("</")
+                            if (
+                                partial_close != -1
+                                and len(remaining) - partial_close < 10
+                            ):
+                                incomplete_buffer = remaining[partial_close:]
+                                if partial_close > 0:
+                                    yield self._sse(
+                                        {"thinking": remaining[:partial_close]}
+                                    )
                             else:
-                                # Has a '<'. Flush everything BEFORE it.
-                                # Hold back the '<' and everything after it.
-                                if last_lt > 0:
-                                    safe_chunk = token_buffer[:last_lt]
-                                    full_response += safe_chunk
-                                    stream_window += safe_chunk
-                                    yield self._sse({"chunk": safe_chunk})
-                                    token_buffer = token_buffer[last_lt:]
-                                break # Wait for more chunks to see if '<' becomes '<think>'
+                                yield self._sse({"thinking": remaining})
+                            break
+                    else:
+                        # Look for opening tag
+                        open_match = META_TAGS.search(token[pos:])
+                        if open_match and open_match.group(1) == "":
+                            # Found opening tag
+                            before_tag = token[pos : pos + open_match.start()]
+                            if before_tag:
+                                full_response.append(before_tag)
+                                yield self._sse({"chunk": before_tag})
 
-                # ── Keep window bounded ────────────────────────────────────
-                if len(stream_window) > 500:
-                    stream_window = stream_window[-500:]
+                            in_think_block = True
+                            pos += open_match.end()
+                            yield self._sse({"progress": "AI thinking..."})
+                        else:
+                            # Check for partial opening tag
+                            remaining = token[pos:]
+                            partial_open = remaining.rfind("<")
+                            if (
+                                partial_open != -1
+                                and len(remaining) - partial_open < 10
+                            ):
+                                # Might be start of <think>, <tool_call>, etc
+                                possible_tag = remaining[partial_open:].lower()
+                                if possible_tag in [
+                                    "<",
+                                    "<t",
+                                    "<th",
+                                    "<thi",
+                                    "<thin",
+                                    "<think",
+                                    "<to",
+                                    "<too",
+                                    "<tool",
+                                    "<tool_",
+                                    "<tool_c",
+                                ]:
+                                    incomplete_buffer = remaining[partial_open:]
+                                    if partial_open > 0:
+                                        code_part = remaining[:partial_open]
+                                        full_response.append(code_part)
+                                        yield self._sse({"chunk": code_part})
+                                    break
 
-                # ── Step marker detection ──────────────────────────────────
-                step_m = re.search(r'---\s*step:\s*(.*?)\s*---', stream_window, re.IGNORECASE)
-                if step_m:
-                    step_text = step_m.group(1).strip()
-                    if step_text and step_text != last_step:
-                        last_step = step_text
-                        yield self._sse({"progress": step_text})
+                            # No tag, pure code
+                            full_response.append(remaining)
+                            yield self._sse({"chunk": remaining})
+                            break
 
-                # ── File marker detection (fallback) ───────────────────────
-                file_matches = marker_regex.findall(stream_window)
-                if file_matches:
-                    latest_file = file_matches[-1].strip().lower()
-                    if latest_file not in detected_files:
-                        detected_files.add(latest_file)
-                        if latest_file not in last_step.lower():
-                            action = "Editing" if is_edit else "Writing"
-                            yield self._sse({"progress": f"{action} {latest_file}..."})
+                # Check for file markers in recent output
+                recent = "".join(full_response[-1000:])
+                file_matches = FILE_MARKER.findall(recent)
+                for fname in file_matches:
+                    fname_lower = fname.lower()
+                    if fname_lower not in detected_files:
+                        detected_files.add(fname_lower)
+                        action = "Editing" if is_edit else "Creating"
+                        progress_msg = f"{action} {fname_lower}..."
+                        if progress_msg != last_progress:
+                            last_progress = progress_msg
+                            yield self._sse({"progress": progress_msg})
 
-            # ── Post-stream cleanup ────────────────────────────────────────────
-            yield self._sse({"progress": "Finalizing build..."})
+            # Finalize
+            yield self._sse({"progress": "Processing files..."})
 
-            # Final strip of any leftover meta tags and step markers
-            full_response = re.sub(
-                r'<(?:think|thought|tool_call|description)>.*?</(?:think|thought|tool_call|description)>',
-                '', full_response, flags=re.DOTALL | re.IGNORECASE
+            final_text = "".join(full_response)
+            final_text = re.sub(
+                r"<(/?)(think|thought|tool_call|description)>",
+                "",
+                final_text,
+                flags=re.IGNORECASE,
             )
-            full_response = re.sub(r'---\s*step:.*?---', '', full_response, flags=re.IGNORECASE).strip()
 
-            files = self.parse_multi_file_output(full_response)
+            files = self.parse_multi_file_output(final_text)
 
             if not files:
-                files = [{"name": "index.html", "content": full_response or "<!-- Empty response from model -->"}]
+                yield self._sse({"error": "No valid files generated"})
+                return
 
             if is_edit and existing_files:
                 merged = {f["name"].lower(): f["content"] for f in existing_files}
@@ -222,17 +238,18 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                     merged[f["name"].lower()] = f["content"]
                 files = [{"name": k, "content": v} for k, v in merged.items()]
 
-            yield self._sse({"progress": f"Complete — {len(files)} file(s) generated"})
+            yield self._sse({"progress": f"Complete — {len(files)} file(s) ready"})
 
-            explanation = self.extract_description(full_response)
+            explanation = self.extract_description(raw_text=final_text)
             if explanation:
                 yield self._sse({"explanation": explanation})
 
             yield self._sse({"done": True, "files": files})
 
         except requests.exceptions.Timeout:
-            yield self._sse({"error": f"Request timed out. {model_display} took too long."})
+            logger.error("OpenRouter timeout")
+            yield self._sse({"error": f"Timeout. {model_display} took too long."})
 
         except Exception as e:
             logger.error(f"OpenRouter error: {e}", exc_info=True)
-            yield self._sse({"error": str(e)})
+            yield self._sse({"error": f"Generation failed: {str(e)}"})

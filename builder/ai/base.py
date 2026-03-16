@@ -1,155 +1,173 @@
 import re
+import json
 import logging
+
 logger = logging.getLogger(__name__)
 
 
 class BaseWebsiteGenerator:
-    """Base class for AI website generators with shared parsing and prompt logic."""
+    """Base class for AI website generators with robust parsing."""
 
-    def _build_system_prompt(self, output_type='react'):
+    def _build_system_prompt(self, output_type="react"):
         common_protocol = """
-STRICT PROTOCOL:
-1. START with your reasoning inside <think>...</think> tags.
-2. For EVERY logical section or file you start, emit a marker: --- step: [Short Description] ---
-3. Use the file marker format below for code:
+STRICT PROTOCOL - FOLLOW EXACTLY:
+1. START with your reasoning inside <think>...</think> tags. Describe your approach.
+2. For EVERY file you create, use this EXACT format:
    --- filename ---
-   [content]
-
-4. END your response with a summary inside <description>...</description> tags. Describe exactly what you built.
-5. Use lowercase for all filenames.
-6. Return ONLY markers, tags, and code. DO NOT use markdown code blocks (```) around markers or files.
-7. NEVER use <tool_call> or <thought> tags.
+   [complete file content here]
+   
+3. END your response with a summary inside <description>...</description> tags.
+4. Use lowercase for all filenames.
+5. NEVER use markdown code blocks (```) around file markers.
+6. NEVER use <tool_call> or nested <think> tags.
+7. Ensure ALL code is complete, valid, and production-ready.
 """
-        if output_type == 'html':
+        if output_type == "html":
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY HTML websites.
 {common_protocol}
-CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
 
-1. OUTPUT FORMAT: Pure HTML/CSS/JS only. Three separate files:
-   - index.html, style.css, script.js
-
-2. IMAGES: Use high-quality Unsplash photos from these IDs:
-   photo-1485827404703-89b55fcc595e (AI), photo-1461749280684-dccba630e2f6 (Code), photo-1497366216548-37526070297c (Corporate)
-
-3. TAILWIND CSS: Load via CDN in <head>:
-   <script src="https://cdn.tailwindcss.com"></script>
+CRITICAL RULES:
+1. OUTPUT: Three files only - index.html, style.css, script.js
+2. IMAGES: Use Unsplash IDs: photo-1485827404703-89b55fcc595e, photo-1461749280684-dccba630e2f6
+3. TAILWIND: Load via CDN: <script src="https://cdn.tailwindcss.com"></script>
+4. NO EXTERNAL DEPENDENCIES - everything in the 3 files
+5. VALIDATE all HTML tags are closed, all CSS braces match
 """
-
         else:
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY React apps.
 {common_protocol}
-CRITICAL RULES — FOLLOW EXACTLY OR OUTPUT IS BROKEN:
 
-1. FILE EXTENSIONS: ALL component files MUST use .jsx extension.
-2. REQUIRED FILES: src/App.jsx, src/index.css, etc.
-3. IMAGES: Use high-quality Unsplash IDs:
-   photo-1518770660439-4636190af475 (Tech), photo-1542831371-29b0f74f9713 (Code), photo-1551288049-bebda4e38f71 (Metrics)
-
-4. STYLING: Use Tailwind CSS for everything. Dark themes preferred.
-
-5. VALIDATION: BEFORE COMPLETING, verify ALL files are complete and syntactically correct:
-   - Check all JSX files have matching opening and closing tags
-   - Check all React components export properly
-   - Check all imports reference existing files
-   - Ensure index.js properly mounts the App component with correct syntax:
-     const root = ReactDOM.createRoot(document.getElementById('root'));
-     root.render(<React.StrictMode><App /></React.StrstrictMode>);
-   - Do NOT leave any code incomplete or truncated
+CRITICAL RULES:
+1. FILE EXTENSIONS: ALL components MUST use .jsx (NOT .js)
+2. REQUIRED FILES: src/App.jsx, src/index.css, src/main.jsx
+3. IMAGES: Use Unsplash IDs: photo-1518770660439-4636190af475, photo-1542831371-29b0f74f9713
+4. STYLING: Use Tailwind CSS classes, dark themes preferred
+5. VALIDATION: Check ALL JSX tags closed, ALL imports valid, NO incomplete code
+6. main.jsx MUST use: ReactDOM.createRoot(document.getElementById('root'))
 """
+
     def _build_edit_system_prompt(self):
-        return """You are an EXPERT Frontend Engineer. The user wants to EDIT their existing website.
+        return """You are an EXPERT Frontend Engineer editing existing code.
 
 STRICT PROTOCOL:
-1. START with your reasoning inside <think>...</think> tags.
-2. For EVERY logical section or file you start, emit a marker: --- step: [Short Description] ---
-3. Return ONLY the files that need to change.
-4. For modified files, return the FULL updated content.
-5. END your response with a summary inside <description>...</description> tags.
-6. Use the file marker format: --- filename ---
-7. Standardize all filenames to lowercase.
-8. NEVER use <tool_call> or <thought> tags.
-9. Return ONLY markers, tags, and code. DO NOT use markdown code blocks (```) around markers or files.
+1. START with <think>...</think> tags describing your changes.
+2. Return ONLY files that need changes using: --- filename ---
+3. Return COMPLETE file content, not just changes.
+4. END with <description>...</description> tags.
+5. NEVER use markdown code blocks around markers.
+6. Preserve all working code exactly.
 """
 
-    def _build_user_message(self, prompt: str, existing_files: list, output_type: str, is_edit: bool) -> str:
-        """Build the user message — shared by all AI clients."""
+    def _build_user_message(self, prompt, existing_files, output_type, is_edit):
         if is_edit and existing_files:
-            files_context = "\n\n".join([
-                f"--- {f['name']} ---\n{f['content']}"
-                for f in existing_files
-            ])
-            return (
-                f"Here are the CURRENT website files:\n\n"
-                f"{files_context}\n\n"
-                f"USER EDIT REQUEST: {prompt}\n\n"
-                f"IMPORTANT: Make ONLY the minimal changes needed for this edit request.\n"
-                f"Preserve all working code exactly as is.\n"
-                f"Return ALL files (both changed and unchanged) using the --- filename --- marker format.\n"
-                f"Do NOT regenerate files that don't need changes - copy them unchanged.\n\n"
-                f"VALIDATION: Check ALL files are complete before finishing. Fix any incomplete code."
+            files_context = "\n\n".join(
+                [f"--- {f['name']} ---\n{f['content']}" for f in existing_files]
             )
-        else:
             return (
-                f"Build a complete, production-ready "
-                f"{'React app' if output_type == 'react' else 'HTML website'} "
-                f"for the following request:\n\n{prompt}\n\n"
-                f"IMPORTANT: Verify all files are complete and syntactically correct before completing."
+                f"CURRENT FILES:\n\n{files_context}\n\n"
+                f"EDIT REQUEST: {prompt}\n\n"
+                f"Make MINIMAL changes. Preserve working code. "
+                f"Return ALL files using --- filename --- format."
             )
+        return (
+            f"Build a complete, production-ready "
+            f"{'React app' if output_type == 'react' else 'HTML website'} "
+            f"for:\n\n{prompt}\n\n"
+            f"Verify all files are complete and syntactically correct."
+        )
 
     @staticmethod
-    def parse_multi_file_output(raw_text: str) -> list:
+    def parse_multi_file_output(raw_text):
         """
-        Parses AI output looking for file markers like: --- filename ---
-        Safely strips reasoning tags like <think>, <thought>, <tool_call>, and <description>.
-        Returns a list of dicts: [{"name": filename, "content": content}]
+        Parse AI output for file markers: --- filename ---
+        Returns: [{"name": str, "content": str}]
         """
-        # 1. Aggressively strip known meta-tags that shouldn't be in files
-        clean_text = re.sub(r'<(?:think|thought|description|tool_call)>.*?</(?:think|thought|description|tool_call)>', '', raw_text, flags=re.DOTALL | re.IGNORECASE)
-        # Also strip unclosed tags at the start/end
-        clean_text = re.sub(r'<(?:think|thought|description|tool_call)>.*$', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
-        clean_text = re.sub(r'^.*?</(?:think|thought|description|tool_call)>', '', clean_text, flags=re.DOTALL | re.IGNORECASE)
-        # Strip step markers completely
-        clean_text = re.sub(r'---\s*step:.*?---', '', clean_text, flags=re.IGNORECASE)
+        if not raw_text or not isinstance(raw_text, str):
+            return []
 
         files = []
-        # More resilient marker pattern: handles --- filename ---, **filename**, [filename], etc.
-        marker_pattern = r'(?:\n|^)(?:[#\-\*]{3,}\s*|\*\*|\[|File:\s*)([\w\./\-\\]+)(?:\s*[#\-\*]{3,}|(?:\s*[:\]]|\*\*))'
 
+        # Try JSON format first
+        try:
+            if raw_text.strip().startswith("["):
+                parsed = json.loads(raw_text.strip())
+                if isinstance(parsed, list):
+                    return [
+                        {"name": f["name"].lower(), "content": f["content"]}
+                        for f in parsed
+                        if "name" in f and "content" in f
+                    ]
+        except json.JSONDecodeError:
+            pass
+
+        # Clean text - remove meta tags
+        clean_text = raw_text
+
+        # Remove thinking/description tags and their content
+        clean_text = re.sub(
+            r"<(think|thought|tool_call|description)>.*?</\1>",
+            "",
+            clean_text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Remove unclosed tags
+        clean_text = re.sub(
+            r"<(think|thought|tool_call|description)>.*",
+            "",
+            clean_text,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Remove step markers
+        clean_text = re.sub(
+            r"---\s*step:[\s\S]*?---", "", clean_text, flags=re.IGNORECASE
+        )
+
+        # Parse file markers: --- filename.ext ---
+        marker_pattern = (
+            r"(?:\n|^)(?:[-=#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#]{3,})"
+        )
         parts = re.split(marker_pattern, clean_text, flags=re.IGNORECASE)
 
         if len(parts) > 1:
             for i in range(1, len(parts), 2):
                 filename = parts[i].strip().lower()
-                content  = parts[i + 1].strip() if i + 1 < len(parts) else ''
+                content = parts[i + 1].strip() if i + 1 < len(parts) else ""
 
-                # Cleanup markdown fences
-                content = re.sub(r'^```[\w]*\n?', '', content, flags=re.MULTILINE)
-                content = re.sub(r'```$', '', content.strip()).strip()
+                # Skip meta markers
+                if any(
+                    stop in filename
+                    for stop in ["step", "thinking", "thought", "description"]
+                ):
+                    continue
 
-                # Cleanup language annotations
+                # Clean markdown fences
+                content = re.sub(r"^```[\w]*\n?", "", content, flags=re.MULTILINE)
+                content = re.sub(r"\n?```\s*$", "", content)
+
+                # Clean language annotations
                 content = re.sub(
-                    r'^(?://|#)\s*(?:javascript|jsx|css|html|typescript|tsx)\n?',
-                    '', content, flags=re.IGNORECASE
+                    r"^(?://|#)\s*(?:javascript|jsx|css|html|typescript|tsx)\n?",
+                    "",
+                    content,
+                    flags=re.IGNORECASE,
                 )
 
                 if filename and content:
-                    # Ignore non-file markers that might leak (e.g. meta instructions)
-                    if any(stop in filename for stop in ['step', 'thinking', 'thought', 'description']):
-                        continue
-                        
                     files.append({"name": filename, "content": content.strip()})
-        
-        # fallback: if no markers found but text exists, it might be a single-file response
+
+        # Fallback: single file
         if not files and clean_text.strip():
-            logger.warning("No file markers found, using raw text as index.html")
-            # Only if it looks like code/html
-            if '<' in clean_text or '{' in clean_text:
+            if "<" in clean_text or "{" in clean_text:
                 files.append({"name": "index.html", "content": clean_text.strip()})
 
         return files
 
     @staticmethod
-    def extract_description(raw_text: str) -> str:
-        """Extract content inside <description>...</description> tags."""
-        match = re.search(r'<description>(.*?)</description>', raw_text, re.DOTALL | re.IGNORECASE)
+    def extract_description(raw_text):
+        """Extract <description> content."""
+        match = re.search(
+            r"<description>(.*?)</description>", raw_text, re.DOTALL | re.IGNORECASE
+        )
         return match.group(1).strip() if match else ""

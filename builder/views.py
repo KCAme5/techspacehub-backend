@@ -1,3 +1,4 @@
+# builder/views.py
 import json
 import logging
 import io
@@ -393,34 +394,24 @@ class EnhancePromptView(APIView):
 
 
 class GenerateView(APIView):
-    """POST /api/builder/generate/ — Stream AI generation via Server-Sent Events."""
+    """POST /api/builder/generate/ - Stream AI generation via SSE."""
 
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-
         prompt = request.data.get("prompt", "").strip()
         output_type = request.data.get("output_type", "react")
         style_preset = request.data.get("style_preset", "")
-        selected_model = request.data.get("model", "llama")
+        selected_model = request.data.get("model", "trinity")
+        existing_files = request.data.get("existing_files", None)
 
-        # ── Validation ────────────────────────────────────────────────────────
+        # Validation
         if not prompt:
             return Response(
                 {"error": "Prompt is required"}, status=status.HTTP_400_BAD_REQUEST
             )
-        if len(prompt) < 10:
-            return Response(
-                {"error": "Prompt must be at least 10 characters"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if len(prompt) > 5000:
-            return Response(
-                {"error": "Prompt must be less than 5000 characters"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
-        # ── Credit check and atomic deduction ────────────────────────────────
+        # Credit check
         try:
             with transaction.atomic():
                 user_credits = UserCredits.objects.select_for_update().get(
@@ -430,7 +421,6 @@ class GenerateView(APIView):
                     return Response(
                         {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
                     )
-                # Deduct credit atomically - will be rolled back if generation fails
                 user_credits.credits -= 1
                 user_credits.total_used += 1
                 user_credits.save()
@@ -439,11 +429,7 @@ class GenerateView(APIView):
                 {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
             )
 
-        # ── Existing files — edit mode ────────────────────────────────────────
-        # Frontend sends current files when user is editing an existing project
-        existing_files = request.data.get("existing_files", None)
-
-        # ── Create session record ─────────────────────────────────────────────
+        # Create session
         session = GenerationSession.objects.create(
             user=request.user,
             prompt=prompt,
@@ -453,106 +439,82 @@ class GenerateView(APIView):
             credits_used=1,
         )
 
-        # ── SSE generator ─────────────────────────────────────────────────────
+        # Model mapping
+        model_map = {
+            "trinity": "arcee-ai/trinity-large-preview:free",
+            "gpt-oss": "openai/gpt-oss-120b:free",
+            "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
+            "stepfun": "stepfun/step-3.5-flash",
+            "glm": "z-ai/glm-4.5-air:free",
+            "hunter": "openrouter/hunter-alpha",
+            "healer": "openrouter/healer-alpha",
+            "minimax": "minimax/minimax-m2.5:free",
+        }
+        model_name = model_map.get(selected_model, model_map["trinity"])
+
         def stream_response():
+            """Generator yielding SSE events immediately."""
+            full_raw_text = ""
+            client = None
+
             try:
-                if selected_model == "trinity":
-                    # Trinity as base model (High speed, high quality)
-                    client = OpenRouterBuilderClient(
-                        model="arcee-ai/trinity-large-preview:free"
-                    )
-                elif selected_model == "gpt-oss":
-                    client = OpenRouterBuilderClient(
-                        model="openai/gpt-oss-120b:free"
-                    )
-                elif selected_model == "nemotron":
-                    client = OpenRouterBuilderClient(
-                        model="nvidia/nemotron-3-super-120b-a12b:free"
-                    )
-                elif selected_model == "stepfun":
-                    client = OpenRouterBuilderClient(model="stepfun/step-3.5-flash")
-                elif selected_model == "glm":
-                    client = OpenRouterBuilderClient(model="z-ai/glm-4.5-air:free")
-                elif selected_model == "hunter":
-                    client = OpenRouterBuilderClient(
-                        model="openrouter/hunter-alpha"
-                    )
-                elif selected_model == "healer":
-                    client = OpenRouterBuilderClient(
-                        model="openrouter/healer-alpha"
-                    )
-                elif selected_model == "minimax":
-                    client = OpenRouterBuilderClient(
-                        model="minimax/minimax-m2.5:free"
-                    )
-                else:
-                    # Fallback to Trinity
-                    client = OpenRouterBuilderClient(
-                        model="arcee-ai/trinity-large-preview:free"
-                    )
+                client = OpenRouterBuilderClient(model=model_name)
 
-                full_raw_text = ""
-
-                for sse_line in client.stream_generation(
+                for sse_event in client.stream_generation(
                     prompt,
                     existing_files=existing_files,
                     output_type=output_type,
                 ):
+                    # Pass through immediately
+                    yield sse_event
 
-                    # Accumulate raw text from chunk events so we can save
-                    # the full response to the session after streaming ends.
+                    # Accumulate for session save
                     try:
-                        if sse_line.startswith("data: "):
-                            payload = json.loads(sse_line[6:].strip())
+                        if sse_event.startswith("data: "):
+                            payload = json.loads(sse_event[6:].strip())
                             if "chunk" in payload:
                                 full_raw_text += payload["chunk"]
-                    except Exception:
-                        pass  # progress / done / error lines — not chunks
+                            if "thinking" in payload:
+                                full_raw_text += payload["thinking"]
+                    except:
+                        pass
 
-                    # Send the SSE line to the browser as-is
-                    yield sse_line
-
-                # ── Persist completed session to DB ───────────────────────────
+                # Save session
                 try:
                     files = client.parse_multi_file_output(full_raw_text)
                     session.files = files
                     session.raw_response = full_raw_text
-                    session.explanation = (
-                        f"Generated using {selected_model.capitalize()}."
-                    )
+                    session.explanation = client.extract_description(full_raw_text)
                     session.status = "done"
                     session.save()
                 except Exception as save_err:
                     logger.error(f"Session save error: {save_err}")
 
             except Exception as e:
-                logger.error(f"Generation error for {request.user.username}: {e}")
+                logger.error(f"Generation error: {e}")
                 session.status = "error"
                 session.save()
-                
-                # Restore credits on failure - rollback the deducted credit
+
+                # Restore credits
                 try:
-                    with transaction.atomic():
-                        UserCredits.objects.filter(user=request.user).update(
-                            credits=F('credits') + 1,
-                            total_used=F('total_used') - 1
-                        )
-                        logger.info(f"Credit restored for user {request.user.username} due to generation failure")
+                    UserCredits.objects.filter(user=request.user).update(
+                        credits=F("credits") + 1, total_used=F("total_used") - 1
+                    )
                 except Exception as rollback_err:
-                    logger.error(f"Failed to restore credits: {rollback_err}")
-                
+                    logger.error(f"Credit restore failed: {rollback_err}")
+
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
-        # ── StreamingHttpResponse ─────────────────────────────────────────────
+        # CRITICAL: Headers to prevent any buffering
         response = StreamingHttpResponse(
             stream_response(),
             content_type="text/event-stream",
         )
-        # Prevents buffering on Nginx, Coolify, and Cloudflare
-        response["Cache-Control"] = "no-cache, no-transform"
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
         response["X-Accel-Buffering"] = "no"
         response["Content-Encoding"] = "identity"
-        response["Gzip"] = "off"
         response["Connection"] = "keep-alive"
 
         return response
@@ -654,37 +616,42 @@ class ImageProxyView(APIView):
         # Use proper domain extraction to prevent subdomain attacks
         try:
             from tldextract import tldextract
+
             extracted = tldextract.extract(url)
             # Get the registered domain (e.g., "unsplash.com" from "images.unsplash.com")
             registered_domain = extracted.registered_domain
-            
+
             # Check if the registered domain is in our allowed list
             allowed = False
             for allowed_domain in self.ALLOWED_DOMAINS:
                 # Exact match or subdomain of an allowed domain
-                if registered_domain == allowed_domain or registered_domain.endswith('.' + allowed_domain):
+                if registered_domain == allowed_domain or registered_domain.endswith(
+                    "." + allowed_domain
+                ):
                     allowed = True
                     break
-            
+
             if not allowed:
-                logger.warning(f"ImageProxy: Domain blocked: {registered_domain} for URL: {url}")
+                logger.warning(
+                    f"ImageProxy: Domain blocked: {registered_domain} for URL: {url}"
+                )
                 return HttpResponse(status=403)
-                
+
         except ImportError:
             # Fallback: use basic urlparse (less secure but works without tldextract)
             parsed = urlparse(url)
             domain = parsed.netloc.lower()
             # Remove www. prefix for comparison
-            if domain.startswith('www.'):
+            if domain.startswith("www."):
                 domain = domain[4:]
-            
+
             # Check exact domain match or subdomain
             allowed = False
             for allowed_domain in self.ALLOWED_DOMAINS:
-                if domain == allowed_domain or domain.endswith('.' + allowed_domain):
+                if domain == allowed_domain or domain.endswith("." + allowed_domain):
                     allowed = True
                     break
-            
+
             if not allowed:
                 logger.warning(f"ImageProxy: Domain blocked: {domain} for URL: {url}")
                 return HttpResponse(status=403)
@@ -938,10 +905,10 @@ class PushToGithubView(APIView):
                 )
             user_data = user_resp.json()
             username = user_data["login"]
-            
+
             # Check token scopes - need 'repo' scope for full write access
-            scopes = user_resp.headers.get('X-OAuth-Scopes', '').split(', ')
-            if 'repo' not in scopes:
+            scopes = user_resp.headers.get("X-OAuth-Scopes", "").split(", ")
+            if "repo" not in scopes:
                 # Also check for token type - classic tokens have scopes, fine-grained have different structure
                 # For now, warn but allow if no clear scope info
                 logger.warning(f"GitHub token may lack repo scope. Scopes: {scopes}")
