@@ -49,15 +49,11 @@ class GroqBuilderClient(BaseWebsiteGenerator):
 
         if is_edit_mode:
             system_prompt = self._build_edit_system_prompt()
-            files_context = "\n\n".join([
-                f"--- {f['name']} ---\n{f['content']}"
-                for f in existing_files
-            ])
-            user_message = (
-                f"Here are the CURRENT website files:\n\n"
-                f"{files_context}\n\n"
-                f"USER EDIT REQUEST: {prompt}\n\n"
-                f"Return ONLY the files that need to change using the --- filename --- marker format."
+            user_message = self._build_user_message(
+                prompt=prompt,
+                existing_files=existing_files,
+                output_type=output_type,
+                is_edit=True
             )
             yield self._sse({"progress": "Analyzing existing code..."})
         else:

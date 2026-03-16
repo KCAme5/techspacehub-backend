@@ -73,7 +73,10 @@ STRICT PROTOCOL:
                 f"Here are the CURRENT website files:\n\n"
                 f"{files_context}\n\n"
                 f"USER EDIT REQUEST: {prompt}\n\n"
-                f"Return ONLY the files that need to change using the --- filename --- marker format."
+                f"IMPORTANT: Make ONLY the minimal changes needed for this edit request.\n"
+                f"Preserve all working code exactly as is.\n"
+                f"Return ALL files (both changed and unchanged) using the --- filename --- marker format.\n"
+                f"Do NOT regenerate files that don't need changes - copy them unchanged.\n"
             )
         else:
             return (
