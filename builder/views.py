@@ -1160,3 +1160,143 @@ class ChatView(APIView):
         )
         
         return "\n".join(context_parts)
+
+
+class FixErrorsView(APIView):
+    """
+    POST /api/builder/fix-errors/
+    
+    Self-healing endpoint: receives errors from frontend preview,
+    sends them to AI for fixing, returns corrected code.
+    
+    This is FREE - doesn't charge credits for fix attempts.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        errors = request.data.get('errors', [])
+        files = request.data.get('files', [])
+        prompt = request.data.get('prompt', '')
+        attempt = request.data.get('attempt', 1)
+
+        if not errors:
+            return Response(
+                {'error': 'No errors provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not files:
+            return Response(
+                {'error': 'No files provided'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        logger.info(f"FixErrors attempt {attempt}: {len(errors)} errors received")
+
+        # Build error context for AI
+        error_context = self._build_error_context(errors)
+
+        # Build fix prompt
+        fix_prompt = self._build_fix_prompt(prompt, files, error_context, attempt)
+
+        try:
+            # Use OpenRouter for AI fixing
+            client = OpenRouterBuilderClient(model="minimax/minimax-m2.5:free")
+
+            # Get the output type from files
+            output_type = 'react' if any(f.get('name', '').endswith(('.jsx', '.tsx')) else 'html'
+
+            # Generate fixed code
+            full_response = ""
+            for chunk in client.stream_generation(
+                fix_prompt,
+                existing_files=files,
+                output_type=output_type
+            ):
+                try:
+                    if chunk.startswith('data: '):
+                        data = json.loads(chunk[6:])
+                        if 'chunk' in data:
+                            full_response += data['chunk']
+                        if 'thinking' in data:
+                            full_response += data['thinking']
+                except:
+                    pass
+
+            # Parse the response
+            fixed_files = client.parse_multi_file_output(full_response)
+
+            if not fixed_files:
+                return Response(
+                    {'error': 'Failed to generate fixed code', 'details': 'AI returned empty response'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            logger.info(f"FixErrors success: Generated {len(fixed_files)} fixed files")
+
+            return Response({
+                'files': fixed_files,
+                'success': True,
+                'attempt': attempt,
+                'message': f'Fixed {len(errors)} errors on attempt {attempt}'
+            })
+
+        except Exception as e:
+            logger.error(f"FixErrors error: {e}")
+            return Response(
+                {'error': str(e), 'success': False},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _build_error_context(self, errors):
+        """Build a readable error context for the AI."""
+        error_lines = []
+        
+        for i, err in enumerate(errors, 1):
+            level = err.get('level', 'error')
+            message = err.get('message', 'Unknown error')
+            line = err.get('line', '')
+            stack = err.get('stack', '')
+            
+            error_lines.append(f"{i}. [{level.upper()}] {message}")
+            if line:
+                error_lines.append(f"   Line: {line}")
+            if stack:
+                # Truncate stack trace
+                error_lines.append(f"   Stack: {stack[:200]}...")
+        
+        return "\n".join(error_lines)
+
+    def _build_fix_prompt(self, original_prompt, files, error_context, attempt):
+        """Build a prompt that instructs the AI to fix errors."""
+        
+        # List current files
+        file_list = "\n".join([f"- {f.get('name', 'unknown')}" for f in files])
+        
+        prompt = f"""
+You are an expert React/JavaScript developer fixing errors in generated code.
+
+ORIGINAL USER PROMPT:
+{original_prompt}
+
+CURRENT FILES:
+{file_list}
+
+ERRORS TO FIX (Attempt {attempt}):
+{error_context}
+
+INSTRUCTIONS:
+1. Analyze each error carefully
+2. Fix all syntax errors, missing imports, undefined variables, and component errors
+3. Ensure the code is valid JavaScript/React that will render without errors
+4. Return ONLY the corrected files using this format:
+
+--- filename.jsx ---
+// corrected code here
+--- filename.css ---
+/* corrected code here */
+
+Focus on making the code work. Do NOT change functionality unless necessary to fix errors.
+"""
+        return prompt
