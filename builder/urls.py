@@ -18,6 +18,7 @@ from .views import (
     ImageProxyView,
     DownloadZipView,
     PushToGithubView,
+    ChatView,
 )
 
 urlpatterns = [
@@ -58,6 +59,11 @@ urlpatterns = [
         "sessions/<uuid:session_id>/push-to-github/",
         PushToGithubView.as_view(),
         name="session-push-github",
+    ),
+    path(
+        "sessions/<uuid:session_id>/chat/",
+        ChatView.as_view(),
+        name="session-chat",
     ),
     path('proxy/image/', ImageProxyView.as_view()),
 ]

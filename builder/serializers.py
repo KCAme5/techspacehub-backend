@@ -45,9 +45,16 @@ class GenerationSessionSerializer(serializers.ModelSerializer):
             "output_type",
             "style_preset",
             "files",
+            "file_tree",
+            "conversation",
+            "version",
+            "parent_session",
             "explanation",
             "status",
             "credits_used",
             "created_at",
             "updated_at",
         ]
+
+    # Handle nested serialization for parent_session
+    parent_session = serializers.UUIDField(read_only=True)

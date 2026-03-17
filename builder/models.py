@@ -107,6 +107,23 @@ class GenerationSession(models.Model):
     output_type = models.CharField(max_length=10, choices=OUTPUT_TYPES, default="html")
     style_preset = models.CharField(max_length=30, blank=True)
     files = models.JSONField(default=list)  # [{ name, content }]
+    
+    # NEW: File tree structure for hierarchical folders
+    file_tree = models.JSONField(default=dict)  # { "root": { "folders": {}, "files": {} } }
+    
+    # NEW: Conversation history for agentic workflow
+    conversation = models.JSONField(default=list)  # [{ role: "user" | "assistant", content: str, files: [] }]
+    
+    # NEW: Versioning support
+    version = models.IntegerField(default=1)
+    parent_session = models.ForeignKey(
+        'self', 
+        null=True, 
+        blank=True, 
+        on_delete=models.SET_NULL,
+        related_name='child_sessions'
+    )
+    
     explanation = models.TextField(blank=True)
     raw_response = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default="generating")

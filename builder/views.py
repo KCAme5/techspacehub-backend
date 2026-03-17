@@ -953,3 +953,210 @@ class PushToGithubView(APIView):
                 {"error": f"Failed to push files to GitHub: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class ChatView(APIView):
+    """
+    POST /api/builder/sessions/<id>/chat/
+    Continue a conversation with context - the agentic workflow.
+    This allows users to iteratively edit their generated website
+    by providing follow-up instructions that the AI understands
+    in the context of the previous generations.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        """Continue conversation with context."""
+        user_message = request.data.get("message", "").strip()
+        
+        if not user_message:
+            return Response(
+                {"error": "Message is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Get the existing session
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+        
+        # Get conversation history
+        conversation = session.conversation or []
+        
+        # Add user message to conversation
+        conversation.append({
+            "role": "user",
+            "content": user_message,
+            "timestamp": timezone.now().isoformat()
+        })
+
+        # Credit check - for follow-up generations
+        try:
+            with transaction.atomic():
+                user_credits = UserCredits.objects.select_for_update().get(
+                    user=request.user
+                )
+                if user_credits.credits <= 0:
+                    return Response(
+                        {"error": "NO_CREDITS"},
+                        status=status.HTTP_402_PAYMENT_REQUIRED
+                    )
+                user_credits.credits -= 1
+                user_credits.total_used += 1
+                user_credits.save()
+        except UserCredits.DoesNotExist:
+            return Response(
+                {"error": "NO_CREDITS"},
+                status=status.HTTP_402_PAYMENT_REQUIRED
+            )
+
+        # Build context for AI
+        existing_files = session.files
+        output_type = session.output_type
+        
+        # Model selection (use same as original session)
+        model_map = {
+            "trinity": "arcee-ai/trinity-large-preview:free",
+            "gpt-oss": "openai/gpt-oss-120b:free",
+            "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
+            "stepfun": "stepfun/step-3.5-flash",
+            "glm": "z-ai/glm-4.5-air:free",
+            "hunter": "openrouter/hunter-alpha",
+            "healer": "openrouter/healer-alpha",
+            "minimax": "minimax/minimax-m2.5:free",
+        }
+        model_name = model_map.get("trinity", model_map["trinity"])
+
+        def stream_response():
+            """Stream chat response with context awareness."""
+            full_raw_text = ""
+            
+            try:
+                client = OpenRouterBuilderClient(model=model_name)
+                
+                # Build a context-aware prompt that includes previous conversation
+                context_prompt = self._build_context_prompt(
+                    user_message, 
+                    conversation[:-1],  # Previous messages only
+                    existing_files,
+                    output_type
+                )
+                
+                yield f"data: {json.dumps({'progress': 'Thinking with context...'})}\n\n"
+                
+                for sse_event in client.stream_generation(
+                    context_prompt,
+                    existing_files=existing_files,
+                    output_type=output_type,
+                ):
+                    yield sse_event
+                    
+                    # Accumulate for session save
+                    try:
+                        if sse_event.startswith("data: "):
+                            payload = json.loads(sse_event[6:].strip())
+                            if "chunk" in payload:
+                                full_raw_text += payload["chunk"]
+                            if "thinking" in payload:
+                                full_raw_text += payload["thinking"]
+                    except:
+                        pass
+                
+                # Save updated conversation
+                try:
+                    files = client.parse_multi_file_output(full_raw_text)
+                    
+                    # Add assistant response to conversation
+                    explanation = client.extract_description(full_raw_text)
+                    conversation.append({
+                        "role": "assistant",
+                        "content": explanation or "Updated the website based on your feedback.",
+                        "files": files,
+                        "timestamp": timezone.now().isoformat()
+                    })
+                    
+                    # Update session with new files and conversation
+                    if files:
+                        # Merge with existing files
+                        merged_files = {f["name"]: f["content"] for f in existing_files}
+                        for f in files:
+                            merged_files[f["name"]] = f["content"]
+                        session.files = [{"name": k, "content": v} for k, v in merged_files.items()]
+                    
+                    session.conversation = conversation
+                    session.raw_response = full_raw_text
+                    session.explanation = explanation
+                    session.credits_used += 1
+                    session.status = "done"
+                    session.save()
+                    
+                    yield f"data: {json.dumps({'done': True, 'conversation': conversation})}\n\n"
+                    
+                except Exception as save_err:
+                    logger.error(f"Chat session save error: {save_err}")
+                    
+            except Exception as e:
+                logger.error(f"Chat generation error: {e}")
+                session.status = "error"
+                session.save()
+                
+                # Restore credits
+                try:
+                    UserCredits.objects.filter(user=request.user).update(
+                        credits=F("credits") + 1,
+                        total_used=F("total_used") - 1
+                    )
+                except Exception as rollback_err:
+                    logger.error(f"Credit restore failed: {rollback_err}")
+                
+                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+
+        # Streaming response
+        response = StreamingHttpResponse(
+            stream_response(),
+            content_type="text/event-stream",
+        )
+        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response["Pragma"] = "no-cache"
+        response["Expires"] = "0"
+        response["X-Accel-Buffering"] = "no"
+        response["Content-Encoding"] = "identity"
+        response["Connection"] = "keep-alive"
+        
+        return response
+
+    def _build_context_prompt(self, user_message, conversation_history, existing_files, output_type):
+        """
+        Build a context-aware prompt that includes previous conversation.
+        This helps the AI understand the full context of edits.
+        """
+        context_parts = []
+        
+        # Add conversation history as context
+        if conversation_history:
+            context_parts.append("CONVERSATION HISTORY:")
+            for msg in conversation_history[-5:]:  # Last 5 messages for context
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                context_parts.append(f"{role.upper()}: {content}")
+            context_parts.append("")
+        
+        # Current files context
+        if existing_files:
+            context_parts.append("CURRENT PROJECT FILES:")
+            for f in existing_files[:10]:  # First 10 files
+                context_parts.append(f"--- {f.get('name', 'unknown')} ---")
+                # Include first 500 chars of each file as context
+                content = f.get("content", "")[:500]
+                context_parts.append(content)
+                context_parts.append("")
+        
+        # Current user request
+        context_parts.append(f"USER REQUEST: {user_message}")
+        context_parts.append("")
+        context_parts.append(
+            "Based on the conversation history and current files above, "
+            "make the requested changes. Preserve working code that doesn't need to change. "
+            "Return only the files that were modified using the --- filename --- format."
+        )
+        
+        return "\n".join(context_parts)
