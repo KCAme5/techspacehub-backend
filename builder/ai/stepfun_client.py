@@ -87,7 +87,8 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             yield self._sse({"progress": "Connected - streaming..."})
 
             # Stream processing state
-            full_response = []
+            full_response = []        # Collects non-thinking code chunks
+            thinking_response = []    # Collects content from inside think blocks
             in_think_block = False
             incomplete_buffer = ""
             detected_files = set()
@@ -133,6 +134,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                             # Found closing tag
                             think_content = token[pos : pos + close_match.start()]
                             if think_content:
+                                thinking_response.append(think_content)
                                 yield self._sse({"thinking": think_content})
 
                             in_think_block = False
@@ -148,10 +150,12 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                             ):
                                 incomplete_buffer = remaining[partial_close:]
                                 if partial_close > 0:
+                                    thinking_response.append(remaining[:partial_close])
                                     yield self._sse(
                                         {"thinking": remaining[:partial_close]}
                                     )
                             else:
+                                thinking_response.append(remaining)
                                 yield self._sse({"thinking": remaining})
                             break
                     else:
@@ -202,8 +206,11 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                             yield self._sse({"chunk": remaining})
                             break
 
-                # Check for file markers in recent output
-                recent = "".join(full_response[-1000:])
+                # Check for file markers in recent output — also check thinking buffer
+                # (some models output code entirely within think blocks)
+                recent_code = "".join(full_response[-1000:])
+                recent_thinking = "".join(thinking_response[-1000:])
+                recent = recent_code if recent_code.strip() else recent_thinking
                 file_matches = FILE_MARKER.findall(recent)
                 for fname in file_matches:
                     fname_lower = fname.lower()
@@ -227,6 +234,34 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             )
 
             files = self.parse_multi_file_output(final_text)
+
+            # ── FALLBACK: if model put all code inside <think> blocks ──────────
+            # This happens with DeepSeek-based models and some OpenRouter models.
+            # If no files were parsed from the outer response, try parsing the
+            # thinking content — then re-emit those chunks as 'chunk' events so
+            # the editor receives them correctly.
+            if not files and thinking_response:
+                thinking_text = "".join(thinking_response)
+                thinking_text_clean = re.sub(
+                    r"<(/?)(think|thought|tool_call|description)>",
+                    "",
+                    thinking_text,
+                    flags=re.IGNORECASE,
+                )
+                files = self.parse_multi_file_output(thinking_text_clean)
+                if files:
+                    logger.info(
+                        f"Fallback: parsed {len(files)} file(s) from thinking content."
+                    )
+                    # Re-emit code as chunk events so frontend editor shows the code
+                    for f in files:
+                        marker = f"--- {f['name']} ---"
+                        yield self._sse({"chunk": f"\n{marker}\n{f['content']}\n"})
+                    
+                    # Emit files payload so views.py can capture last_files for Daytona
+                    yield self._sse({"files": files})
+                    
+                    final_text = thinking_text_clean
 
             if not files:
                 yield self._sse({"error": "No valid files generated"})

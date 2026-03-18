@@ -11,16 +11,17 @@ class BaseWebsiteGenerator:
     def _build_system_prompt(self, output_type="react"):
         common_protocol = """
 STRICT PROTOCOL - FOLLOW EXACTLY:
-1. START with your reasoning inside <think>...</think> tags. Describe your approach.
-2. For EVERY file you create, use this EXACT format:
+1. FIRST: Write your reasoning inside <think>...</think> tags ONLY. NO code inside think tags.
+2. AFTER the closing </think> tag, output ALL file code using this EXACT format:
    --- filename ---
    [complete file content here]
    
-3. END your response with a summary inside <description>...</description> tags.
+3. END with a summary inside <description>...</description> tags.
 4. Use lowercase for all filenames.
 5. NEVER use markdown code blocks (```) around file markers.
 6. NEVER use <tool_call> or nested <think> tags.
-7. Ensure ALL code is complete, valid, and production-ready.
+7. NEVER put code inside <think> blocks — code MUST come after </think>.
+8. Ensure ALL code is complete, valid, and production-ready.
 """
         if output_type == "html":
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY HTML websites.

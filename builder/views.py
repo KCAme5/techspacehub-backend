@@ -454,119 +454,29 @@ class GenerateView(APIView):
         model_name = model_map.get(selected_model, model_map["trinity"])
 
         def stream_response():
-            """Generator yielding SSE events immediately."""
-            full_raw_text = ""
-            client = None
-
+            """Generator yielding SSE events via AgentOrchestrator."""
+            from .services.agent_orchestrator import AgentOrchestrator
+            
+            # The frontend should ideally send a session_id, but for now we generate one
+            session_id = request.data.get("session_id")
+            orchestrator = AgentOrchestrator(session_id=session_id)
+            
             try:
-                client = OpenRouterBuilderClient(model=model_name)
-                current_prompt = prompt
-                max_attempts = 3
-                last_files = []
-                build_verified = False
-
-                for attempt in range(1, max_attempts + 1):
-                    full_raw_text = ""
-                    last_files = []
-
-                    # 1. Stream raw AI output (chunks + thinking only; suppress interim file payloads)
-                    for sse_event in client.stream_generation(
-                        current_prompt,
-                        existing_files=existing_files,
-                        output_type=output_type,
-                        suppress_done=True,
-                    ):
-                        # Forward chunk/thinking/progress events to the client
-                        # but suppress 'files' payloads — preview only shown after verification
-                        try:
-                            if sse_event.startswith("data: "):
-                                payload = json.loads(sse_event[6:].strip())
-                                if "chunk" in payload:
-                                    full_raw_text += payload["chunk"]
-                                    yield sse_event
-                                elif "thinking" in payload:
-                                    full_raw_text += payload["thinking"]
-                                    yield sse_event
-                                elif "progress" in payload:
-                                    yield sse_event
-                                elif "files" in payload:
-                                    # Buffer files internally — don't send to frontend yet
-                                    last_files = payload["files"]
-                                # suppress 'done' events from the AI client
-                            else:
-                                yield sse_event
-                        except Exception:
-                            yield sse_event
-
-                    # If no files were parsed, we can't validate; stop here
-                    if not last_files:
-                        break
-
-                    # 2. Build Test in Daytona
-                    yield f'data: {json.dumps({"progress": "Verifying code in Daytona sandbox..."})}\n\n'
-
-                    runner = DaytonaRunner()
-                    success, logs = runner.run_build_test(last_files)
-
-                    if success:
-                        build_verified = True
-                        yield f'data: {json.dumps({"progress": "Build verified ✨"})}\n\n'
-                        break
-                    else:
-                        if attempt < max_attempts:
-                            yield f'data: {json.dumps({"healing": True, "attempt": attempt, "max_attempts": max_attempts, "progress": f"Self-healing attempt {attempt}/{max_attempts}..."})}\n\n'
-                            logger.warning(f"Self-healing {attempt}: {logs[:300]}")
-                            current_prompt = (
-                                f"The previous code had build errors. Fix ALL of them.\n"
-                                f"ERROR LOGS:\n{logs}\n\n"
-                                f"Return the COMPLETE corrected file set."
-                            )
-                        else:
-                            yield f'data: {json.dumps({"progress": "Build could not be fully verified. Returning best effort."})}\n\n'
-                            build_verified = True  # Still deliver — best effort
-                            logger.error(f"Self-healing exhausted after {max_attempts} attempts.")
-
-                # Finalize and emit the single guaranteed done event
-                try:
-                    explanation = client.extract_description(full_raw_text)
-                    session.files = last_files
-                    session.raw_response = full_raw_text
-                    session.explanation = explanation
-                    session.status = "done"
-                    session.save()
-
-                    # The ONE event the frontend waits for before showing the preview
-                    yield f'data: {json.dumps({"done": True, "build_verified": build_verified, "files": last_files, "explanation": explanation})}\n\n'
-                except Exception as save_err:
-                    logger.error(f"Session save error: {save_err}")
-
+                yield from orchestrator.stream_build(
+                    prompt=prompt,
+                    model_name=model_name,
+                    existing_files=existing_files,
+                    is_chat=False
+                )
             except Exception as e:
-                logger.error(f"Generation error: {e}")
-                session.status = "error"
-                session.save()
-
-                # Restore credits
-                try:
-                    UserCredits.objects.filter(user=request.user).update(
-                        credits=F("credits") + 1, total_used=F("total_used") - 1
-                    )
-                except Exception as rollback_err:
-                    logger.error(f"Credit restore failed: {rollback_err}")
-
+                logger.error(f"Generate stream error: {e}", exc_info=True)
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
-        # CRITICAL: Headers to prevent any buffering
         response = StreamingHttpResponse(
-            stream_response(),
-            content_type="text/event-stream",
+            stream_response(), content_type="text/event-stream"
         )
-        response["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response["Pragma"] = "no-cache"
-        response["Expires"] = "0"
+        response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
-        response["Content-Encoding"] = "identity"
-        response["Connection"] = "keep-alive"
-
         return response
 
 
@@ -1077,89 +987,6 @@ class ChatView(APIView):
         model_name = model_map.get("trinity", model_map["trinity"])
 
         def stream_response():
-            """Stream chat response with Daytona build verification."""
-            full_raw_text = ""
-
-            try:
-                client = OpenRouterBuilderClient(model=model_name)
-
-                # Build a context-aware prompt that includes previous conversation
-                context_prompt = self._build_context_prompt(
-                    user_message,
-                    conversation[:-1],  # Previous messages only
-                    existing_files,
-                    output_type
-                )
-
-                yield f"data: {json.dumps({'progress': 'Thinking with context...'})}\n\n"
-
-                max_attempts = 2
-                current_prompt = context_prompt
-                last_files = []
-                build_verified = False
-
-                for attempt in range(1, max_attempts + 1):
-                    full_raw_text = ""
-                    last_files = []
-
-                    for sse_event in client.stream_generation(
-                        current_prompt,
-                        existing_files=existing_files,
-                        output_type=output_type,
-                        suppress_done=True,
-                    ):
-                        try:
-                            if sse_event.startswith("data: "):
-                                payload = json.loads(sse_event[6:].strip())
-                                if "chunk" in payload:
-                                    full_raw_text += payload["chunk"]
-                                    yield sse_event
-                                elif "thinking" in payload:
-                                    full_raw_text += payload["thinking"]
-                                    yield sse_event
-                                elif "progress" in payload:
-                                    yield sse_event
-                                # suppress interim 'files' and 'done' payloads
-                            else:
-                                yield sse_event
-                        except Exception:
-                            yield sse_event
-
-                    # Parse updated/new files
-                    raw_files = client.parse_multi_file_output(full_raw_text)
-                    if raw_files:
-                        # Merge with existing files
-                        merged = {f["name"]: f["content"] for f in existing_files}
-                        for f in raw_files:
-                            merged[f["name"]] = f["content"]
-                        last_files = [{"name": k, "content": v} for k, v in merged.items()]
-
-                    if not last_files:
-                        last_files = existing_files  # No new files parsed; keep existing
-                        build_verified = True
-                        break
-
-                    # Daytona verification
-                    yield f'data: {json.dumps({"progress": "Verifying updated code..."})}\n\n'
-                    runner = DaytonaRunner()
-                    success, logs = runner.run_build_test(last_files)
-
-                    if success:
-                        build_verified = True
-                        yield f'data: {json.dumps({"progress": "Changes verified ✨"})}\n\n'
-                        break
-                    else:
-                        if attempt < max_attempts:
-                            yield f'data: {json.dumps({"healing": True, "attempt": attempt, "progress": "Self-healing chat update..."})}\n\n'
-                            current_prompt = (
-                                f"The previous code had build errors. Fix ALL of them.\n"
-                                f"ERROR LOGS:\n{logs}\n\n"
-                                f"Return the complete corrected file set."
-                            )
-                        else:
-                            build_verified = True  # best effort
-
-                # Save updated conversation
                 try:
                     explanation = client.extract_description(full_raw_text)
                     conversation.append({
@@ -1249,149 +1076,3 @@ class ChatView(APIView):
         
         return "\n".join(context_parts)
 
-
-class FixErrorsView(APIView):
-    """
-    POST /api/builder/fix-errors/
-    
-    Self-healing endpoint: receives errors from frontend preview,
-    sends them to AI for fixing, returns corrected code.
-    
-    This is FREE - doesn't charge credits for fix attempts.
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        errors = request.data.get('errors', [])
-        files = request.data.get('files', [])
-        prompt = request.data.get('prompt', '')
-        attempt = request.data.get('attempt', 1)
-
-        if not errors:
-            return Response(
-                {'error': 'No errors provided'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if not files:
-            return Response(
-                {'error': 'No files provided'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        logger.info(f"FixErrors attempt {attempt}: {len(errors)} errors received")
-
-        # Build error context for AI
-        error_context = self._build_error_context(errors)
-
-        # Build fix prompt
-        fix_prompt = self._build_fix_prompt(prompt, files, error_context, attempt)
-
-        try:
-            # Use Groq for AI fixing - more reliable than OpenRouter
-            from .ai.groq_client import GroqBuilderClient
-            client = GroqBuilderClient(model="llama")
-            
-            if not client.client:
-                return Response(
-                    {'error': 'Groq API not configured. Set LLAMA_API_KEY.'},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-
-            # Get the output type from files
-            output_type = 'react' if any(f.get('name', '').endswith(('.jsx', '.tsx')) for f in files) else 'html'
-
-            # Generate fixed code using Groq
-            full_response = ""
-            for chunk in client.stream_generation(
-                fix_prompt,
-                existing_files=files,
-                output_type=output_type
-            ):
-                try:
-                    if chunk.startswith('data: '):
-                        data = json.loads(chunk[6:])
-                        if 'chunk' in data:
-                            full_response += data['chunk']
-                        if 'thinking' in data:
-                            full_response += data['thinking']
-                except:
-                    pass
-
-            # Parse the response
-            fixed_files = client.parse_multi_file_output(full_response)
-
-            if not fixed_files:
-                return Response(
-                    {'error': 'Failed to generate fixed code', 'details': 'AI returned empty response'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-
-            logger.info(f"FixErrors success: Generated {len(fixed_files)} fixed files")
-
-            return Response({
-                'files': fixed_files,
-                'success': True,
-                'attempt': attempt,
-                'message': f'Fixed {len(errors)} errors on attempt {attempt}'
-            })
-
-        except Exception as e:
-            logger.error(f"FixErrors error: {e}")
-            return Response(
-                {'error': str(e), 'success': False},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    def _build_error_context(self, errors):
-        """Build a readable error context for the AI."""
-        error_lines = []
-        
-        for i, err in enumerate(errors, 1):
-            level = err.get('level', 'error')
-            message = err.get('message', 'Unknown error')
-            line = err.get('line', '')
-            stack = err.get('stack', '')
-            
-            error_lines.append(f"{i}. [{level.upper()}] {message}")
-            if line:
-                error_lines.append(f"   Line: {line}")
-            if stack:
-                # Truncate stack trace
-                error_lines.append(f"   Stack: {stack[:200]}...")
-        
-        return "\n".join(error_lines)
-
-    def _build_fix_prompt(self, original_prompt, files, error_context, attempt):
-        """Build a prompt that instructs the AI to fix errors."""
-        
-        # List current files
-        file_list = "\n".join([f"- {f.get('name', 'unknown')}" for f in files])
-        
-        prompt = f"""
-You are an expert React/JavaScript developer fixing errors in generated code.
-
-ORIGINAL USER PROMPT:
-{original_prompt}
-
-CURRENT FILES:
-{file_list}
-
-ERRORS TO FIX (Attempt {attempt}):
-{error_context}
-
-INSTRUCTIONS:
-1. Analyze each error carefully
-2. Fix all syntax errors, missing imports, undefined variables, and component errors
-3. Ensure the code is valid JavaScript/React that will render without errors
-4. Return ONLY the corrected files using this format:
-
---- filename.jsx ---
-// corrected code here
---- filename.css ---
-/* corrected code here */
-
-Focus on making the code work. Do NOT change functionality unless necessary to fix errors.
-"""
-        return prompt
