@@ -114,72 +114,74 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to upload {file['name']}: {e}")
 
-        # 3. NPM Install
-        yield self._sse({"status": "Installing dependencies..."})
-        try:
-            # The python Daytona SDK's process.exec is synchronous.
-            # To stream logs block by block, we would ideally use an async shell stream.
-            # However, standard process.exec returns an ExecuteResponse with full 'result'.
-            # We'll run it and yield the full log, simulating the real-time stream.
+        if not is_chat:
+            # 3. NPM Install
+            yield self._sse({"status": "Installing dependencies..."})
+            try:
+                # The python Daytona SDK's process.exec is synchronous.
+                # To stream logs block by block, we would ideally use an async shell stream.
+                # However, standard process.exec returns an ExecuteResponse with full 'result'.
+                # We'll run it and yield the full log, simulating the real-time stream.
+                
+                # Note: For true real-time streaming, the Python SDK needs async/WebSocket process execution.
+                # We will yield the final install output as a log chunk.
+                install_res = sandbox.process.exec("npm install")
+                yield self._sse({"log": f"$ npm install\n{install_res.result}\n"})
+                
+                if install_res.exit_code != 0:
+                    yield self._sse({"error": f"Failed to install dependencies (Exit {install_res.exit_code})"})
+                    # We still return the files so the user sees the code
+                    yield self._sse({"complete": True, "files": generated_files})
+                    return
+            except Exception as e:
+                yield self._sse({"error": f"NPM Install error: {str(e)}"})
+
+            # 4. Start Dev Server
+            yield self._sse({"status": "Starting dev server..."})
             
-            # Note: For true real-time streaming, the Python SDK needs async/WebSocket process execution.
-            # We will yield the final install output as a log chunk.
-            install_res = sandbox.process.exec("npm install")
-            yield self._sse({"log": f"$ npm install\n{install_res.result}\n"})
-            
-            if install_res.exit_code != 0:
-                yield self._sse({"error": f"Failed to install dependencies (Exit {install_res.exit_code})"})
-                # We still return the files so the user sees the code
+            # We need to start 'npm run dev' asynchronously so it keeps running in the background.
+            # process.exec blocks until finish, which we DONT want for a dev server.
+            # Alternatively, we can use nohup or & inside the exec.
+            # Let's start it in the background:
+            try:
+                # Kill any existing Vite processes first!
+                sandbox.process.exec("npx kill-port 5173")
+                
+                # Start dev server in the background and redirect output
+                sandbox.process.exec("nohup npm run dev -- --host 0.0.0.0 --port 5173 > dev.log 2>&1 &")
+                yield self._sse({"log": "$ npm run dev\nServer starting in background...\n"})
+                
+                # Wait a moment for Vite to start
+                time.sleep(2)
+                
+                # Check dev_log
+                log_res = sandbox.process.exec("cat dev.log")
+                if log_res.result:
+                    yield self._sse({"log": log_res.result + "\n"})
+
+            except Exception as e:
+                yield self._sse({"error": f"Dev server error: {str(e)}"})
                 yield self._sse({"complete": True, "files": generated_files})
                 return
-        except Exception as e:
-            yield self._sse({"error": f"NPM Install error: {str(e)}"})
 
-        # 4. Start Dev Server
-        yield self._sse({"status": "Starting dev server..."})
+        # Optional: The Daytona preview URL pattern. 
+        # In local OSS Daytona, ports are exposed on the host or via a proxy url.
+        # The preview URL format depends on the Daytona architecture. 
+        # For the SDK, `sandbox.get_workspace_url()` might exist, or we construct it.
+        # If using local standard target: port 5173 is exposed.
         
-        # We need to start 'npm run dev' asynchronously so it keeps running in the background.
-        # process.exec blocks until finish, which we DONT want for a dev server.
-        # Alternatively, we can use nohup or & inside the exec.
-        # Let's start it in the background:
-        try:
-            # Kill any existing Vite processes first!
-            sandbox.process.exec("npx kill-port 5173")
-            
-            # Start dev server in the background and redirect output
-            sandbox.process.exec("nohup npm run dev -- --host 0.0.0.0 --port 5173 > dev.log 2>&1 &")
-            yield self._sse({"log": "$ npm run dev\nServer starting in background...\n"})
-            
-            # Wait a moment for Vite to start
-            time.sleep(2)
-            
-            # Check dev_log
-            log_res = sandbox.process.exec("cat dev.log")
-            if log_res.result:
-                yield self._sse({"log": log_res.result + "\n"})
-
-            # Optional: The Daytona preview URL pattern. 
-            # In local OSS Daytona, ports are exposed on the host or via a proxy url.
-            # The preview URL format depends on the Daytona architecture. 
-            # For the SDK, `sandbox.get_workspace_url()` might exist, or we construct it.
-            # If using local standard target: port 5173 is exposed.
-            
-            # Actually, Daytona OSS automatically forwards ports.
-            # We'll assume the URL is structured based on the sandbox ID and port.
-            # This is a placeholder; consult accurate Daytona SDK docs for port forwarding URLs.
-            preview_url = f"http://localhost:5173" # Placeholder - update with correct proxy URL
-            
-            yield self._sse({
-                "complete": True,
-                "preview_url": preview_url,
-                "summary": "Build successful! Live preview is ready.",
-                "files": generated_files,
-                "session_id": self.session_id
-            })
-
-        except Exception as e:
-            yield self._sse({"error": f"Dev server error: {str(e)}"})
-            yield self._sse({"complete": True, "files": generated_files})
+        # Actually, Daytona OSS automatically forwards ports.
+        # We'll assume the URL is structured based on the sandbox ID and port.
+        # This is a placeholder; consult accurate Daytona SDK docs for port forwarding URLs.
+        preview_url = f"http://localhost:5173" # Placeholder - update with correct proxy URL
+        
+        yield self._sse({
+            "complete": True,
+            "preview_url": preview_url,
+            "summary": "Build successful! Live preview is ready." if not is_chat else "Files updated! Live preview refreshed.",
+            "files": generated_files,
+            "session_id": self.session_id
+        })
 
     def cleanup(self):
         """Deletes the sandbox and frees resources."""

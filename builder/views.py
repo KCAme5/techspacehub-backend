@@ -486,8 +486,16 @@ class SessionListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        sessions = GenerationSession.objects.filter(user=request.user)[:20]
-        return Response(GenerationSessionSerializer(sessions, many=True).data)
+        try:
+            sessions = GenerationSession.objects.filter(user=request.user)[:20]
+            serializer = GenerationSessionSerializer(sessions, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            logger.error(f"Error serializing sessions: {e}", exc_info=True)
+            return Response(
+                {"error": f"Failed to load sessions: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 class SessionDetailView(APIView):
@@ -513,6 +521,15 @@ class DeleteSessionView(APIView):
     def delete(self, request, session_id):
         try:
             session = GenerationSession.objects.get(id=session_id, user=request.user)
+            
+            # Cleanup Daytona sandbox if it's active
+            try:
+                from .services.agent_orchestrator import AgentOrchestrator
+                orchestrator = AgentOrchestrator(session_id=str(session.id))
+                orchestrator.cleanup()
+            except Exception as e:
+                logger.error(f"Failed to cleanup Daytona sandbox for session {session.id}: {e}")
+                
             session.delete()
             return Response({"success": True})
         except GenerationSession.DoesNotExist:
@@ -991,15 +1008,14 @@ class ChatView(APIView):
                 from .services.agent_orchestrator import AgentOrchestrator
                 
                 orchestrator = AgentOrchestrator(
-                    model=model_name,
                     session_id=str(session.id)
                 )
                 
-                gen = orchestrator.process_generation(
+                gen = orchestrator.stream_build(
                     prompt=user_message,
+                    model_name=model_name,
                     existing_files=existing_files,
-                    output_type=output_type,
-                    conversation_history=conversation
+                    is_chat=True
                 )
                 
                 last_files = existing_files

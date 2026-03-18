@@ -281,6 +281,8 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                     yield self._sse({"explanation": explanation})
 
                 yield self._sse({"done": True, "files": files})
+            else:
+                yield self._sse({"files": files})
 
         except requests.exceptions.Timeout:
             logger.error("OpenRouter timeout")
