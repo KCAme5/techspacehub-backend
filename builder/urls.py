@@ -19,7 +19,6 @@ from .views import (
     DownloadZipView,
     PushToGithubView,
     ChatView,
-    FixErrorsView,
 )
 
 urlpatterns = [
@@ -66,6 +65,5 @@ urlpatterns = [
         ChatView.as_view(),
         name="session-chat",
     ),
-    path('fix-errors/', FixErrorsView.as_view(), name='fix-errors'),
     path('proxy/image/', ImageProxyView.as_view()),
 ]
