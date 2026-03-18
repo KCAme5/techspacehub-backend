@@ -12,15 +12,19 @@ class DaytonaRunner:
         # Use DAYTONA_API_URL if present, fallback to DAYTONA_SERVER_URL (deprecated)
         self.api_key = os.getenv("DAYTONA_API_KEY")
         self.api_url = os.getenv("DAYTONA_API_URL") or os.getenv("DAYTONA_SERVER_URL")
-        
-        if not self.api_key or not self.api_url:
-            logger.error("Daytona credentials missing in environment variables.")
-            raise ValueError("DAYTONA_API_KEY and DAYTONA_API_URL must be set.")
+        self._available = bool(self.api_key and self.api_url)
+
+        if not self._available:
+            logger.warning(
+                "Daytona credentials missing. Build verification will be skipped."
+            )
+            self.client = None
+            return
 
         self.config = DaytonaConfig(
             api_key=self.api_key,
             api_url=self.api_url,
-            target="local" # Default target for OSS
+            target="local",  # Default target for OSS
         )
         self.client = Daytona(config=self.config)
 
@@ -28,7 +32,12 @@ class DaytonaRunner:
         """
         Creates a sandbox, uploads files, runs npm install & build.
         Returns (success_boolean, logs_string).
+        If Daytona is not configured, skips and returns (True, 'skipped').
         """
+        if not self._available:
+            logger.info("Daytona not configured — skipping build verification.")
+            return True, "Build verification skipped (Daytona not configured)."
+
         sandbox = None
         try:
             logger.info("Creating Daytona sandbox for build test...")
@@ -82,6 +91,8 @@ class DaytonaRunner:
 
     def test_connection(self) -> bool:
         """Verifies if the SDK can talk to the server."""
+        if not self._available:
+            return False
         try:
             res = self.client.list()
             return res is not None

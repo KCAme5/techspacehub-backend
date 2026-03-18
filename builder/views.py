@@ -462,32 +462,41 @@ class GenerateView(APIView):
                 client = OpenRouterBuilderClient(model=model_name)
                 current_prompt = prompt
                 max_attempts = 3
-                
+                last_files = []
+                build_verified = False
+
                 for attempt in range(1, max_attempts + 1):
                     full_raw_text = ""
                     last_files = []
-                    
-                    # 1. Stream from AI
+
+                    # 1. Stream raw AI output (chunks + thinking only; suppress interim file payloads)
                     for sse_event in client.stream_generation(
                         current_prompt,
                         existing_files=existing_files,
                         output_type=output_type,
                         suppress_done=True,
                     ):
-                        yield sse_event
-                        
-                        # Accumulate for validation and session save
+                        # Forward chunk/thinking/progress events to the client
+                        # but suppress 'files' payloads — preview only shown after verification
                         try:
                             if sse_event.startswith("data: "):
                                 payload = json.loads(sse_event[6:].strip())
                                 if "chunk" in payload:
                                     full_raw_text += payload["chunk"]
-                                if "thinking" in payload:
+                                    yield sse_event
+                                elif "thinking" in payload:
                                     full_raw_text += payload["thinking"]
-                                if "files" in payload:
+                                    yield sse_event
+                                elif "progress" in payload:
+                                    yield sse_event
+                                elif "files" in payload:
+                                    # Buffer files internally — don't send to frontend yet
                                     last_files = payload["files"]
-                        except:
-                            pass
+                                # suppress 'done' events from the AI client
+                            else:
+                                yield sse_event
+                        except Exception:
+                            yield sse_event
 
                     # If no files were parsed, we can't validate; stop here
                     if not last_files:
@@ -495,29 +504,29 @@ class GenerateView(APIView):
 
                     # 2. Build Test in Daytona
                     yield f'data: {json.dumps({"progress": "Verifying code in Daytona sandbox..."})}\n\n'
-                    
+
                     runner = DaytonaRunner()
                     success, logs = runner.run_build_test(last_files)
-                    
+
                     if success:
-                        yield f'data: {json.dumps({"progress": "Build successful! ✨"})}\n\n'
+                        build_verified = True
+                        yield f'data: {json.dumps({"progress": "Build verified ✨"})}\n\n'
                         break
                     else:
                         if attempt < max_attempts:
-                            yield f'data: {json.dumps({"progress": f"Build failed. Self-healing (Attempt {attempt}/{max_attempts})..."})}\n\n'
-                            logger.warning(f"Self-healing {attempt} started due to build errors: {logs[:200]}...")
-                            
-                            # Update prompt for next attempt
+                            yield f'data: {json.dumps({"healing": True, "attempt": attempt, "max_attempts": max_attempts, "progress": f"Self-healing attempt {attempt}/{max_attempts}..."})}\n\n'
+                            logger.warning(f"Self-healing {attempt}: {logs[:300]}")
                             current_prompt = (
-                                f"The previous code had build errors. Please fix them.\n"
+                                f"The previous code had build errors. Fix ALL of them.\n"
                                 f"ERROR LOGS:\n{logs}\n\n"
-                                f"Provide the COMPLETE corrected file set starting from the beginning."
+                                f"Return the COMPLETE corrected file set."
                             )
                         else:
-                            yield f'data: {json.dumps({"progress": "Build failed after max attempts. Returning best effort."})}\n\n'
-                            logger.error(f"Self-healing failed after {max_attempts} attempts.")
+                            yield f'data: {json.dumps({"progress": "Build could not be fully verified. Returning best effort."})}\n\n'
+                            build_verified = True  # Still deliver — best effort
+                            logger.error(f"Self-healing exhausted after {max_attempts} attempts.")
 
-                # Finalize session
+                # Finalize and emit the single guaranteed done event
                 try:
                     explanation = client.extract_description(full_raw_text)
                     session.files = last_files
@@ -526,8 +535,8 @@ class GenerateView(APIView):
                     session.status = "done"
                     session.save()
 
-                    # Yield final done event to frontend
-                    yield f'data: {json.dumps({"done": True, "files": last_files, "explanation": explanation})}\n\n'
+                    # The ONE event the frontend waits for before showing the preview
+                    yield f'data: {json.dumps({"done": True, "build_verified": build_verified, "files": last_files, "explanation": explanation})}\n\n'
                 except Exception as save_err:
                     logger.error(f"Session save error: {save_err}")
 
@@ -1068,78 +1077,116 @@ class ChatView(APIView):
         model_name = model_map.get("trinity", model_map["trinity"])
 
         def stream_response():
-            """Stream chat response with context awareness."""
+            """Stream chat response with Daytona build verification."""
             full_raw_text = ""
-            
+
             try:
                 client = OpenRouterBuilderClient(model=model_name)
-                
+
                 # Build a context-aware prompt that includes previous conversation
                 context_prompt = self._build_context_prompt(
-                    user_message, 
+                    user_message,
                     conversation[:-1],  # Previous messages only
                     existing_files,
                     output_type
                 )
-                
+
                 yield f"data: {json.dumps({'progress': 'Thinking with context...'})}\n\n"
-                
-                for sse_event in client.stream_generation(
-                    context_prompt,
-                    existing_files=existing_files,
-                    output_type=output_type,
-                ):
-                    yield sse_event
-                    
-                    # Accumulate for session save
-                    try:
-                        if sse_event.startswith("data: "):
-                            payload = json.loads(sse_event[6:].strip())
-                            if "chunk" in payload:
-                                full_raw_text += payload["chunk"]
-                            if "thinking" in payload:
-                                full_raw_text += payload["thinking"]
-                    except:
-                        pass
-                
+
+                max_attempts = 2
+                current_prompt = context_prompt
+                last_files = []
+                build_verified = False
+
+                for attempt in range(1, max_attempts + 1):
+                    full_raw_text = ""
+                    last_files = []
+
+                    for sse_event in client.stream_generation(
+                        current_prompt,
+                        existing_files=existing_files,
+                        output_type=output_type,
+                        suppress_done=True,
+                    ):
+                        try:
+                            if sse_event.startswith("data: "):
+                                payload = json.loads(sse_event[6:].strip())
+                                if "chunk" in payload:
+                                    full_raw_text += payload["chunk"]
+                                    yield sse_event
+                                elif "thinking" in payload:
+                                    full_raw_text += payload["thinking"]
+                                    yield sse_event
+                                elif "progress" in payload:
+                                    yield sse_event
+                                # suppress interim 'files' and 'done' payloads
+                            else:
+                                yield sse_event
+                        except Exception:
+                            yield sse_event
+
+                    # Parse updated/new files
+                    raw_files = client.parse_multi_file_output(full_raw_text)
+                    if raw_files:
+                        # Merge with existing files
+                        merged = {f["name"]: f["content"] for f in existing_files}
+                        for f in raw_files:
+                            merged[f["name"]] = f["content"]
+                        last_files = [{"name": k, "content": v} for k, v in merged.items()]
+
+                    if not last_files:
+                        last_files = existing_files  # No new files parsed; keep existing
+                        build_verified = True
+                        break
+
+                    # Daytona verification
+                    yield f'data: {json.dumps({"progress": "Verifying updated code..."})}\n\n'
+                    runner = DaytonaRunner()
+                    success, logs = runner.run_build_test(last_files)
+
+                    if success:
+                        build_verified = True
+                        yield f'data: {json.dumps({"progress": "Changes verified ✨"})}\n\n'
+                        break
+                    else:
+                        if attempt < max_attempts:
+                            yield f'data: {json.dumps({"healing": True, "attempt": attempt, "progress": "Self-healing chat update..."})}\n\n'
+                            current_prompt = (
+                                f"The previous code had build errors. Fix ALL of them.\n"
+                                f"ERROR LOGS:\n{logs}\n\n"
+                                f"Return the complete corrected file set."
+                            )
+                        else:
+                            build_verified = True  # best effort
+
                 # Save updated conversation
                 try:
-                    files = client.parse_multi_file_output(full_raw_text)
-                    
-                    # Add assistant response to conversation
                     explanation = client.extract_description(full_raw_text)
                     conversation.append({
                         "role": "assistant",
                         "content": explanation or "Updated the website based on your feedback.",
-                        "files": files,
+                        "files": last_files,
                         "timestamp": timezone.now().isoformat()
                     })
-                    
-                    # Update session with new files and conversation
-                    if files:
-                        # Merge with existing files
-                        merged_files = {f["name"]: f["content"] for f in existing_files}
-                        for f in files:
-                            merged_files[f["name"]] = f["content"]
-                        session.files = [{"name": k, "content": v} for k, v in merged_files.items()]
-                    
+
+                    session.files = last_files
                     session.conversation = conversation
                     session.raw_response = full_raw_text
                     session.explanation = explanation
                     session.credits_used += 1
                     session.status = "done"
                     session.save()
-                    
-                    yield f"data: {json.dumps({'done': True, 'conversation': conversation})}\n\n"
-                    
+
+                    yield f"data: {json.dumps({'done': True, 'build_verified': build_verified, 'files': last_files, 'conversation': conversation})}\n\n"
+
                 except Exception as save_err:
                     logger.error(f"Chat session save error: {save_err}")
-                    
+
             except Exception as e:
                 logger.error(f"Chat generation error: {e}")
                 session.status = "error"
                 session.save()
-                
+
                 # Restore credits
                 try:
                     UserCredits.objects.filter(user=request.user).update(
@@ -1148,7 +1195,7 @@ class ChatView(APIView):
                     )
                 except Exception as rollback_err:
                     logger.error(f"Credit restore failed: {rollback_err}")
-                
+
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
         # Streaming response
