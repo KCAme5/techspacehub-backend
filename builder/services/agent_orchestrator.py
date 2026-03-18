@@ -27,7 +27,7 @@ class AgentOrchestrator:
             self.config = DaytonaConfig(
                 api_key=self.api_key,
                 api_url=self.api_url,
-                target="local",
+                target=os.getenv("DAYTONA_TARGET", "local"),
             )
             self.daytona = Daytona(config=self.config)
         else:
