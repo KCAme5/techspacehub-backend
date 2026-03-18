@@ -16,7 +16,7 @@ django-filter==25.2
 psycopg2-binary==2.9.11
 dj-database-url==3.0.1
 whitenoise==6.11.0
-Pillow==12.1.1
+Pillow
 
 # Async & Workers
 celery==5.4.0
