@@ -97,7 +97,5 @@ click-plugins==1.1.1.2
 click-repl==0.3.0
 colorama==0.4.6
 coloredlogs==15.0.1
-pkg_resources==0.0.0
-setuptools==80.9.0
-wheel==0.45.1
-pip==24.0
+# (removed pkg_resources, setuptools, wheel, pip)
+
