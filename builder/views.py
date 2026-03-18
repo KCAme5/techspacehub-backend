@@ -987,27 +987,57 @@ class ChatView(APIView):
         model_name = model_map.get("trinity", model_map["trinity"])
 
         def stream_response():
-                try:
-                    explanation = client.extract_description(full_raw_text)
-                    conversation.append({
-                        "role": "assistant",
-                        "content": explanation or "Updated the website based on your feedback.",
-                        "files": last_files,
-                        "timestamp": timezone.now().isoformat()
-                    })
+            try:
+                from .services.agent_orchestrator import AgentOrchestrator
+                
+                orchestrator = AgentOrchestrator(
+                    model=model_name,
+                    session_id=str(session.id)
+                )
+                
+                gen = orchestrator.process_generation(
+                    prompt=user_message,
+                    existing_files=existing_files,
+                    output_type=output_type,
+                    conversation_history=conversation
+                )
+                
+                last_files = existing_files
+                explanation = "Updated the website based on your instructions."
+                
+                for event_type, data in gen:
+                    if event_type == 'status':
+                        yield f"data: {json.dumps({'status': data})}\n\n"
+                    elif event_type == 'file_created':
+                        if 'files' in data:
+                            last_files = data['files']
+                        yield f"data: {json.dumps({'file_created': data.get('filename')})}\n\n"
+                    elif event_type == 'chunk':
+                        yield f"data: {json.dumps({'chunk': data})}\n\n"
+                    elif event_type == 'thinking':
+                        yield f"data: {json.dumps({'thinking': data})}\n\n"
+                    elif event_type == 'log':
+                        yield f"data: {json.dumps({'log': data})}\n\n"
+                    elif event_type == 'complete':
+                        if 'files' in data:
+                            last_files = data['files']
+                        if 'explanation' in data:
+                            explanation = data['explanation']
+                        
+                        conversation.append({
+                            "role": "assistant",
+                            "content": explanation,
+                            "files": last_files,
+                            "timestamp": timezone.now().isoformat()
+                        })
 
-                    session.files = last_files
-                    session.conversation = conversation
-                    session.raw_response = full_raw_text
-                    session.explanation = explanation
-                    session.credits_used += 1
-                    session.status = "done"
-                    session.save()
-
-                    yield f"data: {json.dumps({'done': True, 'build_verified': build_verified, 'files': last_files, 'conversation': conversation})}\n\n"
-
-                except Exception as save_err:
-                    logger.error(f"Chat session save error: {save_err}")
+                        session.files = last_files
+                        session.conversation = conversation
+                        session.explanation = explanation
+                        session.status = "done"
+                        session.save()
+                        
+                        yield f"data: {json.dumps({'complete': True, 'build_verified': True, 'preview_url': data.get('preview_url'), 'files': last_files, 'conversation': conversation})}\n\n"
 
             except Exception as e:
                 logger.error(f"Chat generation error: {e}")
