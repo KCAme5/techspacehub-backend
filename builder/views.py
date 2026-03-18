@@ -1201,13 +1201,20 @@ class FixErrorsView(APIView):
         fix_prompt = self._build_fix_prompt(prompt, files, error_context, attempt)
 
         try:
-            # Use OpenRouter for AI fixing
-            client = OpenRouterBuilderClient(model="minimax/minimax-m2.5:free")
+            # Use Groq for AI fixing - more reliable than OpenRouter
+            from .ai.groq_client import GroqBuilderClient
+            client = GroqBuilderClient(model="llama")
+            
+            if not client.client:
+                return Response(
+                    {'error': 'Groq API not configured. Set LLAMA_API_KEY.'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
 
             # Get the output type from files
             output_type = 'react' if any(f.get('name', '').endswith(('.jsx', '.tsx')) for f in files) else 'html'
 
-            # Generate fixed code
+            # Generate fixed code using Groq
             full_response = ""
             for chunk in client.stream_generation(
                 fix_prompt,
