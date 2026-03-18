@@ -23,7 +23,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
         """Format as SSE data line."""
         return f"data: {json.dumps(payload)}\n\n"
 
-    def stream_generation(self, prompt, existing_files=None, output_type="react"):
+    def stream_generation(self, prompt, existing_files=None, output_type="react", suppress_done=False):
         """
         Stream generation with real-time token delivery.
         Yields SSE events immediately as they arrive from API.
@@ -240,11 +240,12 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
             yield self._sse({"progress": f"Complete — {len(files)} file(s) ready"})
 
-            explanation = self.extract_description(raw_text=final_text)
-            if explanation:
-                yield self._sse({"explanation": explanation})
+            if not suppress_done:
+                explanation = self.extract_description(raw_text=final_text)
+                if explanation:
+                    yield self._sse({"explanation": explanation})
 
-            yield self._sse({"done": True, "files": files})
+                yield self._sse({"done": True, "files": files})
 
         except requests.exceptions.Timeout:
             logger.error("OpenRouter timeout")

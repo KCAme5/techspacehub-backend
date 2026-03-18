@@ -18,6 +18,7 @@ from .models import UserCredits, CreditPackage, CreditPayment, GenerationSession
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
 from .ai import GroqBuilderClient, GeminiBuilderClient
 from .ai.stepfun_client import OpenRouterBuilderClient
+from .services.daytona_runner import DaytonaRunner
 from payments.services import initiate_stk_push
 from .serializers import GenerationSessionSerializer
 import requests as ext_requests
@@ -459,34 +460,74 @@ class GenerateView(APIView):
 
             try:
                 client = OpenRouterBuilderClient(model=model_name)
+                current_prompt = prompt
+                max_attempts = 3
+                
+                for attempt in range(1, max_attempts + 1):
+                    full_raw_text = ""
+                    last_files = []
+                    
+                    # 1. Stream from AI
+                    for sse_event in client.stream_generation(
+                        current_prompt,
+                        existing_files=existing_files,
+                        output_type=output_type,
+                        suppress_done=True,
+                    ):
+                        yield sse_event
+                        
+                        # Accumulate for validation and session save
+                        try:
+                            if sse_event.startswith("data: "):
+                                payload = json.loads(sse_event[6:].strip())
+                                if "chunk" in payload:
+                                    full_raw_text += payload["chunk"]
+                                if "thinking" in payload:
+                                    full_raw_text += payload["thinking"]
+                                if "files" in payload:
+                                    last_files = payload["files"]
+                        except:
+                            pass
 
-                for sse_event in client.stream_generation(
-                    prompt,
-                    existing_files=existing_files,
-                    output_type=output_type,
-                ):
-                    # Pass through immediately
-                    yield sse_event
+                    # If no files were parsed, we can't validate; stop here
+                    if not last_files:
+                        break
 
-                    # Accumulate for session save
-                    try:
-                        if sse_event.startswith("data: "):
-                            payload = json.loads(sse_event[6:].strip())
-                            if "chunk" in payload:
-                                full_raw_text += payload["chunk"]
-                            if "thinking" in payload:
-                                full_raw_text += payload["thinking"]
-                    except:
-                        pass
+                    # 2. Build Test in Daytona
+                    yield f'data: {json.dumps({"progress": "Verifying code in Daytona sandbox..."})}\n\n'
+                    
+                    runner = DaytonaRunner()
+                    success, logs = runner.run_build_test(last_files)
+                    
+                    if success:
+                        yield f'data: {json.dumps({"progress": "Build successful! ✨"})}\n\n'
+                        break
+                    else:
+                        if attempt < max_attempts:
+                            yield f'data: {json.dumps({"progress": f"Build failed. Self-healing (Attempt {attempt}/{max_attempts})..."})}\n\n'
+                            logger.warning(f"Self-healing {attempt} started due to build errors: {logs[:200]}...")
+                            
+                            # Update prompt for next attempt
+                            current_prompt = (
+                                f"The previous code had build errors. Please fix them.\n"
+                                f"ERROR LOGS:\n{logs}\n\n"
+                                f"Provide the COMPLETE corrected file set starting from the beginning."
+                            )
+                        else:
+                            yield f'data: {json.dumps({"progress": "Build failed after max attempts. Returning best effort."})}\n\n'
+                            logger.error(f"Self-healing failed after {max_attempts} attempts.")
 
-                # Save session
+                # Finalize session
                 try:
-                    files = client.parse_multi_file_output(full_raw_text)
-                    session.files = files
+                    explanation = client.extract_description(full_raw_text)
+                    session.files = last_files
                     session.raw_response = full_raw_text
-                    session.explanation = client.extract_description(full_raw_text)
+                    session.explanation = explanation
                     session.status = "done"
                     session.save()
+
+                    # Yield final done event to frontend
+                    yield f'data: {json.dumps({"done": True, "files": last_files, "explanation": explanation})}\n\n'
                 except Exception as save_err:
                     logger.error(f"Session save error: {save_err}")
 
