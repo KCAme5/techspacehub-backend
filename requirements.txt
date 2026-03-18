@@ -42,7 +42,7 @@ daytona-toolbox-api-client==0.152.0
 daytona-toolbox-api-client-async==0.152.0
 groq==0.18.0
 openai==1.64.0
-google-genai==0.5.0
+google-genai
 google-api-python-client==2.190.0
 
 # Network & Utilities
