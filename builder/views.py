@@ -1205,7 +1205,7 @@ class FixErrorsView(APIView):
             client = OpenRouterBuilderClient(model="minimax/minimax-m2.5:free")
 
             # Get the output type from files
-            output_type = 'react' if any(f.get('name', '').endswith(('.jsx', '.tsx')) else 'html'
+            output_type = 'react' if any(f.get('name', '').endswith(('.jsx', '.tsx')) for f in files) else 'html'
 
             # Generate fixed code
             full_response = ""
