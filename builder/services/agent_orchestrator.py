@@ -40,11 +40,13 @@ class AgentOrchestrator:
                     payload = json.loads(event[6:].strip())
                     if "files" in payload:
                         generated_files = payload["files"]
-                    else:
-                        yield event # Forward chunk, thinking, progress
+                    
+                    # ALWAYS yield the event immediately to the frontend
+                    yield event
                 except json.JSONDecodeError:
                     yield event
             else:
+                # Heartbeats (spaces) or other raw data
                 yield event
 
         if not generated_files:

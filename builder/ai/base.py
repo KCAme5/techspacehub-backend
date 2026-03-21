@@ -80,7 +80,7 @@ STRICT PROTOCOL:
     @staticmethod
     def parse_multi_file_output(raw_text):
         """
-        Parse AI output for file markers: --- filename ---
+        Parse AI output for file markers: --- filename --- or ### filename ###
         Returns: [{"name": str, "content": str}]
         """
         if not raw_text or not isinstance(raw_text, str):
@@ -88,31 +88,33 @@ STRICT PROTOCOL:
 
         files = []
 
-        # Try JSON format first
+        # 1. Try JSON format first (some models prefer it)
         try:
-            if raw_text.strip().startswith("["):
-                parsed = json.loads(raw_text.strip())
+            trimmed = raw_text.strip()
+            if trimmed.startswith("[") or (trimmed.startswith("```json") and "[" in trimmed):
+                json_part = trimmed
+                if trimmed.startswith("```json"):
+                    json_part = re.search(r"```json\s*(\[\s*\{.*\}\s*\])\s*```", trimmed, re.DOTALL)
+                    json_part = json_part.group(1) if json_part else trimmed
+                
+                parsed = json.loads(json_part)
                 if isinstance(parsed, list):
                     return [
                         {"name": f["name"].lower(), "content": f["content"]}
                         for f in parsed
                         if "name" in f and "content" in f
                     ]
-        except json.JSONDecodeError:
+        except Exception:
             pass
 
-        # Clean text - remove meta tags
+        # 2. Clean text - remove thinking/description tags
         clean_text = raw_text
-
-        # Remove thinking/description tags and their content
         clean_text = re.sub(
             r"<(think|thought|tool_call|description)>.*?</\1>",
             "",
             clean_text,
             flags=re.DOTALL | re.IGNORECASE,
         )
-
-        # Remove unclosed tags
         clean_text = re.sub(
             r"<(think|thought|tool_call|description)>.*",
             "",
@@ -120,15 +122,27 @@ STRICT PROTOCOL:
             flags=re.DOTALL | re.IGNORECASE,
         )
 
-        # Remove step markers
-        clean_text = re.sub(
-            r"---\s*step:[\s\S]*?---", "", clean_text, flags=re.IGNORECASE
-        )
-
-        # Parse file markers: --- filename.ext ---
+        # 3. Handle models that use Markdown headers instead of dashes
+        # e.g. ### src/App.jsx
+        # Use a regex that finds --- filename --- or ### filename ### or **filename**
         marker_pattern = (
-            r"(?:\n|^)(?:[-=#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#]{3,})"
+            r"(?:\n|^)(?:[-=#*]{2,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#*]{2,})"
         )
+        
+        # 4. Fallback for models that use markdown code blocks WITH filename as first line or comment
+        # e.g. ```jsx\n// src/App.jsx\n...```
+        if not re.search(marker_pattern, clean_text):
+            # Try to find ```blocks with potential filenames inside
+            code_blocks = re.findall(r"```[\w]*\n(.*?)\n```", clean_text, re.DOTALL)
+            for block in code_blocks:
+                # Look for filename in first few lines as a comment
+                name_match = re.search(r"(?://|#|/\*)\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})", block[:100])
+                if name_match:
+                    files.append({"name": name_match.group(1).lower(), "content": block.strip()})
+            
+            if files: return files
+
+        # 5. Standard Marker Parsing
         parts = re.split(marker_pattern, clean_text, flags=re.IGNORECASE)
 
         if len(parts) > 1:
@@ -136,32 +150,25 @@ STRICT PROTOCOL:
                 filename = parts[i].strip().lower()
                 content = parts[i + 1].strip() if i + 1 < len(parts) else ""
 
-                # Skip meta markers
-                if any(
-                    stop in filename
-                    for stop in ["step", "thinking", "thought", "description"]
-                ):
+                if any(stop in filename for stop in ["step", "thinking", "thought", "description"]):
                     continue
 
-                # Clean markdown fences
+                # Clean markdown fences inside the content
                 content = re.sub(r"^```[\w]*\n?", "", content, flags=re.MULTILINE)
                 content = re.sub(r"\n?```\s*$", "", content)
-
-                # Clean language annotations
-                content = re.sub(
-                    r"^(?://|#)\s*(?:javascript|jsx|css|html|typescript|tsx)\n?",
-                    "",
-                    content,
-                    flags=re.IGNORECASE,
-                )
+                
+                # Strip leading/trailing notes if any
+                content = content.split("---")[0].split("###")[0].strip()
 
                 if filename and content:
-                    files.append({"name": filename, "content": content.strip()})
+                    files.append({"name": filename, "content": content})
 
-        # Fallback: single file
+        # 6. Final Fallback: Single file (usually HTML or React App.jsx)
         if not files and clean_text.strip():
-            if "<" in clean_text or "{" in clean_text:
+            if "<html" in clean_text.lower() or "<!DOCTYPE" in clean_text.upper():
                 files.append({"name": "index.html", "content": clean_text.strip()})
+            elif "export default" in clean_text or "import React" in clean_text:
+                files.append({"name": "src/App.jsx", "content": clean_text.strip()})
 
         return files
 

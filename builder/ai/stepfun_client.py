@@ -95,6 +95,9 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             last_progress = ""
 
             for line in resp.iter_lines(decode_unicode=True):
+                # ── HEARTBEAT: Prevent proxy buffering by yielding a space ──
+                yield " " 
+
                 if not line:
                     continue
 
@@ -242,26 +245,17 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             # the editor receives them correctly.
             if not files and thinking_response:
                 thinking_text = "".join(thinking_response)
-                thinking_text_clean = re.sub(
-                    r"<(/?)(think|thought|tool_call|description)>",
-                    "",
-                    thinking_text,
-                    flags=re.IGNORECASE,
-                )
-                files = self.parse_multi_file_output(thinking_text_clean)
+                files = self.parse_multi_file_output(thinking_text)
                 if files:
-                    logger.info(
-                        f"Fallback: parsed {len(files)} file(s) from thinking content."
-                    )
+                    logger.info(f"Fallback: parsed {len(files)} file(s) from thinking content.")
                     # Re-emit code as chunk events so frontend editor shows the code
                     for f in files:
                         marker = f"--- {f['name']} ---"
+                        # Use self._sse internally
                         yield self._sse({"chunk": f"\n{marker}\n{f['content']}\n"})
                     
-                    # Emit files payload so views.py can capture last_files
                     yield self._sse({"files": files})
-                    
-                    final_text = thinking_text_clean
+                    final_text = thinking_text
 
             if not files:
                 yield self._sse({"error": "No valid files generated"})
