@@ -33,13 +33,7 @@ autobahn==25.12.2
 txaio==25.12.2
 service-identity==24.2.0
 
-# AI & Daytona
-daytona==0.152.0
-daytona-api-client==0.152.0
-daytona-api-client-async==0.152.0
-daytona_sdk==0.152.0
-daytona-toolbox-api-client==0.152.0
-daytona-toolbox-api-client-async==0.152.0
+# AI
 groq==0.18.0
 openai==1.64.0
 google-genai

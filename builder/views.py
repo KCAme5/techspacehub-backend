@@ -18,7 +18,7 @@ from .models import UserCredits, CreditPackage, CreditPayment, GenerationSession
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
 from .ai import GroqBuilderClient, GeminiBuilderClient
 from .ai.stepfun_client import OpenRouterBuilderClient
-from .services.daytona_runner import DaytonaRunner
+
 from payments.services import initiate_stk_push
 from .serializers import GenerationSessionSerializer
 import requests as ext_requests
@@ -522,13 +522,6 @@ class DeleteSessionView(APIView):
         try:
             session = GenerationSession.objects.get(id=session_id, user=request.user)
             
-            # Cleanup Daytona sandbox if it's active
-            try:
-                from .services.agent_orchestrator import AgentOrchestrator
-                orchestrator = AgentOrchestrator(session_id=str(session.id))
-                orchestrator.cleanup()
-            except Exception as e:
-                logger.error(f"Failed to cleanup Daytona sandbox for session {session.id}: {e}")
                 
             session.delete()
             return Response({"success": True})

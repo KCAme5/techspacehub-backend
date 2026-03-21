@@ -258,7 +258,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                         marker = f"--- {f['name']} ---"
                         yield self._sse({"chunk": f"\n{marker}\n{f['content']}\n"})
                     
-                    # Emit files payload so views.py can capture last_files for Daytona
+                    # Emit files payload so views.py can capture last_files
                     yield self._sse({"files": files})
                     
                     final_text = thinking_text_clean
