@@ -16,6 +16,7 @@ from django.shortcuts import get_object_or_404
 
 from .models import UserCredits, CreditPackage, CreditPayment, GenerationSession
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
+from .services.credit_service import get_or_create_credits
 from .ai import GroqBuilderClient, GeminiBuilderClient
 from .ai.stepfun_client import OpenRouterBuilderClient
 
@@ -37,15 +38,7 @@ class CreditBalanceView(APIView):
         logger.info(f"Fetching credits for user {request.user.username}")
 
         try:
-            credits_obj, created = UserCredits.objects.get_or_create(
-                user=request.user,
-                defaults={
-                    "credits": 20,
-                    "total_purchased": 0,
-                    "total_used": 0,
-                    "is_free_tier": True,
-                },
-            )
+            credits_obj, created = get_or_create_credits(request.user)
 
             if created:
                 logger.info(
@@ -219,9 +212,9 @@ class MpesaCreditCallbackView(APIView):
                 payment.completed_at = timezone.now()
                 payment.save()
 
-                user_credits, _ = UserCredits.objects.get_or_create(
-                    user=payment.user, defaults={"credits": 0, "is_free_tier": True}
-                )
+                user_credits, _ = get_or_create_credits(payment.user)
+                
+                # Update existing credits - use F() objects for atomicity
                 UserCredits.objects.filter(pk=user_credits.pk).update(
                     credits=F("credits") + payment.credits,
                     total_purchased=F("total_purchased") + payment.credits,
@@ -415,9 +408,10 @@ class GenerateView(APIView):
         # Credit check
         try:
             with transaction.atomic():
-                user_credits = UserCredits.objects.select_for_update().get(
-                    user=request.user
-                )
+                user_credits, _ = get_or_create_credits(request.user)
+                # Refresh from DB to get the latest locked row
+                user_credits = UserCredits.objects.select_for_update().get(pk=user_credits.pk)
+                
                 if user_credits.credits <= 0:
                     return Response(
                         {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
@@ -425,7 +419,8 @@ class GenerateView(APIView):
                 user_credits.credits -= 1
                 user_credits.total_used += 1
                 user_credits.save()
-        except UserCredits.DoesNotExist:
+        except Exception as e:
+            logger.error(f"Credit check error: {e}")
             return Response(
                 {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
             )
@@ -962,9 +957,10 @@ class ChatView(APIView):
         # Credit check - for follow-up generations
         try:
             with transaction.atomic():
-                user_credits = UserCredits.objects.select_for_update().get(
-                    user=request.user
-                )
+                user_credits, _ = get_or_create_credits(request.user)
+                # Refresh from DB to get the latest locked row
+                user_credits = UserCredits.objects.select_for_update().get(pk=user_credits.pk)
+                
                 if user_credits.credits <= 0:
                     return Response(
                         {"error": "NO_CREDITS"},
@@ -973,7 +969,8 @@ class ChatView(APIView):
                 user_credits.credits -= 1
                 user_credits.total_used += 1
                 user_credits.save()
-        except UserCredits.DoesNotExist:
+        except Exception as e:
+            logger.error(f"Credit check error in ChatView: {e}")
             return Response(
                 {"error": "NO_CREDITS"},
                 status=status.HTTP_402_PAYMENT_REQUIRED
