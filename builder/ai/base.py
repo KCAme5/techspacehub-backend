@@ -147,7 +147,7 @@ STRICT PROTOCOL:
 
         if len(parts) > 1:
             for i in range(1, len(parts), 2):
-                filename = parts[i].strip().lower()
+                filename = parts[i].strip()
                 content = parts[i + 1].strip() if i + 1 < len(parts) else ""
 
                 if any(stop in filename for stop in ["step", "thinking", "thought", "description"]):
@@ -169,6 +169,81 @@ STRICT PROTOCOL:
                 files.append({"name": "index.html", "content": clean_text.strip()})
             elif "export default" in clean_text or "import React" in clean_text:
                 files.append({"name": "src/App.jsx", "content": clean_text.strip()})
+
+        return files
+
+    def ensure_essential_files(self, files, output_type="react"):
+        """
+        Ensures that essential scaffolding files exist for the project.
+        If missing, they are injected with standard defaults.
+        """
+        if not files:
+            return files
+
+        file_map = {f["name"].lower(): f for f in files}
+
+        if output_type == "react":
+            # 1. package.json
+            if "package.json" not in file_map:
+                logger.info("Injecting missing package.json")
+                files.append({
+                    "name": "package.json",
+                    "content": json.dumps({
+                        "name": "techspace-generated-app",
+                        "private": True,
+                        "version": "0.0.0",
+                        "type": "module",
+                        "scripts": {
+                            "dev": "vite",
+                            "build": "vite build",
+                            "preview": "vite preview"
+                        },
+                        "dependencies": {
+                            "react": "^18.3.1",
+                            "react-dom": "^18.3.1",
+                            "lucide-react": "^0.460.0",
+                            "framer-motion": "^11.11.11"
+                        },
+                        "devDependencies": {
+                            "@vitejs/plugin-react": "^4.3.3",
+                            "autoprefixer": "^10.4.20",
+                            "postcss": "^8.4.49",
+                            "tailwindcss": "^3.4.14",
+                            "vite": "^5.4.11"
+                        }
+                    }, indent=2)
+                })
+
+            # 2. vite.config.js
+            if "vite.config.js" not in file_map:
+                logger.info("Injecting missing vite.config.js")
+                files.append({
+                    "name": "vite.config.js",
+                    "content": "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({\n  plugins: [react()],\n});"
+                })
+
+            # 3. index.html
+            if "index.html" not in file_map:
+                logger.info("Injecting missing index.html")
+                files.append({
+                    "name": "index.html",
+                    "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>TechSpace AI Builder</title>\n    <script src=\"https://cdn.tailwindcss.com\"></script>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.jsx\"></script>\n  </body>\n</html>"
+                })
+
+            # 4. src/main.jsx (Entry point)
+            if "src/main.jsx" not in file_map:
+                logger.info("Injecting missing src/main.jsx")
+                files.append({
+                    "name": "src/main.jsx",
+                    "content": "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);"
+                })
+            
+            # 5. src/index.css (Tailwind base)
+            if "src/index.css" not in file_map:
+                 files.append({
+                    "name": "src/index.css",
+                    "content": "@tailwind base;\n@tailwind components;\n@tailwind utilities;"
+                })
 
         return files
 

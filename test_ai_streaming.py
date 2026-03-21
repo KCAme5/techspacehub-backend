@@ -13,9 +13,9 @@ DEFAULT_MODEL = "arcee-ai/trinity-large-preview:free"
 
 def test_streaming(model_name=None):
     model = model_name or DEFAULT_MODEL
-    print(f"╔══════════════════════════════════════════════════════════════╗")
-    print(f"║         OPENROUTER STREAMING & THINKING TESTER               ║")
-    print(f"╚══════════════════════════════════════════════════════════════╝")
+    print(f"================================================================")
+    print(f"         OPENROUTER STREAMING & THINKING TESTER               ")
+    print(f"================================================================")
     api_display = f"{API_KEY[:10]}...{API_KEY[-4:]}" if API_KEY else "NOT FOUND"
     print(f"Model: {model}")
     print(f"API Key: {api_display}")
@@ -109,16 +109,16 @@ def test_streaming(model_name=None):
         total_time = time.time() - start_time
         
         print(f"\n\n[3/3] Analysis Complete.")
-        print(f"╔═══════════════════════════════════════════════════╗")
-        print(f"║ RESULTS SUMMARY                                   ║")
-        print(f"╠═══════════════════════════════════════════════════╣")
-        print(f"║ Streaming Active:   {'✅ YES' if has_content else '❌ NO'}                           ║")
-        print(f"║ Thinking Detected:  {'🧠 YES' if has_thinking else '⚪ NO'}                           ║")
-        print(f"║ Time to 1st Token:  {ttft:.2f}s                            ║")
-        print(f"║ Total Time:         {total_time:.2f}s                           ║")
-        print(f"║ Total Tokens:       {token_count:<6}                        ║")
-        print(f"║ Avg Speed:          {token_count/total_time:.1f} tokens/sec               ║")
-        print(f"╚═══════════════════════════════════════════════════╝")
+        print(f"-----------------------------------------------------")
+        print(f" RESULTS SUMMARY                                   ")
+        print(f"-----------------------------------------------------")
+        print(f" Streaming Active:   {'YES' if has_content else 'NO'}")
+        print(f" Thinking Detected:  {'YES' if has_thinking else 'NO'}")
+        print(f" Time to 1st Token:  {ttft:.2f}s")
+        print(f" Total Time:         {total_time:.2f}s")
+        print(f" Total Tokens:       {token_count}")
+        print(f" Avg Speed:          {token_count/total_time:.1f} tokens/sec")
+        print(f"-----------------------------------------------------")
         
     except KeyboardInterrupt:
         print("\n\nTest aborted by user.")
