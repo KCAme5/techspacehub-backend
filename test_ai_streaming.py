@@ -9,7 +9,7 @@ load_dotenv()
 
 API_KEY = os.environ.get("OPEN_ROUTER")
 # Default model from the codebase, but you can change it to a thinking model like 'deepseek/deepseek-r1'
-DEFAULT_MODEL = "arcee-ai/trinity-large-preview:free"
+DEFAULT_MODEL = "nousresearch/hermes-3-llama-3.1-405b:free"
 
 def test_streaming(model_name=None):
     model = model_name or DEFAULT_MODEL
