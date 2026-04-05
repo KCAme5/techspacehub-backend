@@ -2,7 +2,7 @@
 set -e
 
 echo "Running migrations..."
-python manage.py migrate --noinput
+python manage.py migrate --fake-initial --noinput
 
 echo "Starting server..."
 exec gunicorn cybercraft.wsgi:application \

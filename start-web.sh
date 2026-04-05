@@ -8,7 +8,7 @@ PORT=${PORT:-10000}
 
 echo "[$(date)] ========== DJANGO STARTUP =========="
 echo "[$(date)] Running Django migrations..."
-python manage.py migrate --noinput
+python manage.py migrate --fake-initial --noinput
 
 echo "[$(date)] Collecting static files..."
 python manage.py collectstatic --noinput
