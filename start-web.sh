@@ -26,7 +26,6 @@ echo "[$(date)] Daphne will handle HTTP + WebSocket connections"
 daphne \
     -b 0.0.0.0 \
     -p ${PORT} \
-    --ws-per-message-deflate \
     --application-close-timeout 5 \
     --ping-interval 20 \
     --ping-timeout 20 \
