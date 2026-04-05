@@ -33,24 +33,6 @@ services:
       
       - key: SECRET_KEY
         sync: false
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_PUBLISHABLE_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: MPESA_CONSUMER_KEY
-        sync: false
-      - key: MPESA_CONSUMER_SECRET
-        sync: false
-      - key: MPESA_SHORTCODE
-        sync: false
-      - key: MPESA_PASSKEY
-        sync: false
-      - key: MPESA_CALLBACK_URL
-        sync: false
       - key: EMAIL_HOST_USER
         sync: false
       - key: EMAIL_HOST_PASSWORD
@@ -59,13 +41,7 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: LIPANA_SECRET_KEY
-        sync: false
-      - key: LIPANA_WEBHOOK_SECRET
-        sync: false
-      - key: LIPANA_ENVIRONMENT
-        value: production
-  
+        
   # ========== CELERY WORKER (Background tasks) ==========
   - type: background_worker
     name: cybercraft-celery
