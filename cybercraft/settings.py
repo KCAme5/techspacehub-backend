@@ -18,7 +18,7 @@ print(f"[CELERY] BROKER: {CELERY_BROKER_URL}")
 print(f"[CELERY] BACKEND: {CELERY_RESULT_BACKEND}")
 
 if not CELERY_BROKER_URL:
-    raise ValueError("CELERY_BROKER_URL not set in environment!")
+    print("[WARNING] CELERY_BROKER_URL not set. Celery tasks will not work.")
 
 # --- LOAD ENVIRONMENT VARIABLES ---
 # Try multiple locations for .env
@@ -48,15 +48,15 @@ ALLOWED_HOSTS = [
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
-    "cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
-    "92.4.131.203",
+    "adrianchan101-techspacehub-backend.hf.space",
+    ".hf.space",
 ]
 
 # Frontend/Backend URLs - PRODUCTION
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://techspacehub.co.ke")
 BACKEND_URL = os.getenv(
     "BACKEND_URL",
-    "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "https://adrianchan101-techspacehub-backend.hf.space",
 )
 SITE_NAME = "TechSpace"
 
@@ -108,6 +108,8 @@ INSTALLED_APPS = [
     "staff_dashboard",
     # AI Website Builder — credit system
     "builder",
+    # Celery Results (store in DB instead of Redis)
+    "django_celery_results",
 ]
 
 
@@ -145,103 +147,50 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "cybercraft.wsgi.application"
-ASGI_APPLICATION = "cybercraft.asgi.application"
+# ========== ENVIRONMENT DETECTION ==========
+IS_RENDER = os.getenv("RENDER") == "true"
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
-
-# --- REDIS & CELERY CONFIGURATION ---
-# 1. Capture environment variables (strip quotes if present)
-def get_env_stripped(key, default=None):
-    val = os.getenv(key, default)
-    if val is not None and isinstance(val, str):
-        stripped = val.strip("'").strip('"').strip()
-        return stripped if stripped else None
-    return val
-
-
-env_broker_url = get_env_stripped("CELERY_BROKER_URL")
-env_result_backend = get_env_stripped("CELERY_RESULT_BACKEND")
-env_redis_url = get_env_stripped("REDIS_URL")
-
-# 2. Capture component-based variables
-REDIS_HOST = get_env_stripped("REDIS_HOST", "127.0.0.1")
-REDIS_PORT = get_env_stripped("REDIS_PORT", "6379")
-REDIS_PASSWORD = get_env_stripped("REDIS_PASSWORD", "")
-
-# 3. Determine the master Redis URL
-# We want to find a remote URL if possible, especially in production
-potential_urls = [env_broker_url, env_redis_url, env_result_backend]
-REDIS_URL = None
-
-# First pass: look for a non-localhost URL
-for url in potential_urls:
-    if url and "127.0.0.1" not in url and "localhost" not in url:
-        REDIS_URL = url
-        break
-
-# Second pass: if still no URL, take the first available one
-if not REDIS_URL:
-    for url in potential_urls:
-        if url:
-            REDIS_URL = url
-            break
-
-# Third pass: fallback to components or default
-if not REDIS_URL:
-    if REDIS_PASSWORD:
-        REDIS_URL = f"redis://default:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0"
-    else:
-        REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/0"
-
-# 4. Final assignments to ensure consistency across all services
-# If we found a remote URL, we force all Redis-dependent services to use it.
-# This prevents mixed configurations where the broker is remote but results are local.
-if REDIS_URL and ("127.0.0.1" not in REDIS_URL and "localhost" not in REDIS_URL):
-    CELERY_BROKER_URL = REDIS_URL
-    CELERY_RESULT_BACKEND = REDIS_URL
+# Use ASGI for Render (Daphne + WebSocket support)
+if IS_RENDER or ENVIRONMENT == "production":
+    ASGI_APPLICATION = "cybercraft.asgi.application"
 else:
-    CELERY_BROKER_URL = env_broker_url or REDIS_URL
-    CELERY_RESULT_BACKEND = env_result_backend or REDIS_URL
+    WSGI_APPLICATION = "cybercraft.wsgi.application"
 
-# Safety check for production
-if not DEBUG and ("127.0.0.1" in REDIS_URL or "localhost" in REDIS_URL):
-    # If we're in production but somehow got localhost, and we have REDIS_PASSWORD,
-    # it's likely a configuration error. We'll log it clearly.
-    print(
-        "[WARNING] Production environment detected but Redis is pointing to localhost!"
-    )
-    print(f"[WARNING] REDIS_URL: {REDIS_URL}")
 
-# CRITICAL LOGGING: This will help us debug the live connection issue
-print(f"[Config] --- REDIS DEBUG START ---")
-print(
-    f"[Config] env_broker_url: {env_broker_url[:20] if env_broker_url else 'None'}..."
-)
-print(f"[Config] REDIS_URL: {REDIS_URL[:20] if REDIS_URL else 'None'}...")
-print(
-    f"[Config] CELERY_BROKER_URL: {CELERY_BROKER_URL[:20] if CELERY_BROKER_URL else 'None'}..."
-)
-print(f"[Config] --- REDIS DEBUG END ---")
+# --- REDIS & CELERY CONFIGURATION (Upstash) ---
+# All Redis URLs from environment variables (no localhost fallbacks)
+REDIS_URL = os.getenv("REDIS_URL", "")
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "django-db")
 
-# Print for debugging in server logs (safe masking)
-print(
-    f"[Config] Redis connection string determined. Host: {REDIS_HOST}, Port: {REDIS_PORT}"
-)
-if REDIS_URL.startswith("redis://"):
-    parts = REDIS_URL.split("@")
-    if len(parts) > 1:
-        print(f"[Config] Using Authenticated Redis: {parts[1]}")
-    else:
-        print(f"[Config] Using Redis: {REDIS_URL}")
+print(f"[Config] Redis URL configured from Upstash")
+if REDIS_URL:
+    # Mask sensitive parts for logging
+    masked_url = REDIS_URL.split("@")[1] if "@" in REDIS_URL else "<redacted>"
+    print(f"[Config] Broker: {masked_url}")
+else:
+    print(f"[WARNING] REDIS_URL not set. Celery will not work.")
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [REDIS_URL],
+# ========== CHANNELS (WebSocket) ==========
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [REDIS_URL],
+                "capacity": 1500,
+                "expiry": 10,
+            },
         },
-    },
-}
+    }
+else:
+    # Fallback to in-memory for development (not production-safe)
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer"
+        }
+    }
 
 # Database
 DATABASES = {
@@ -332,8 +281,7 @@ ALLOWED_HOSTS = [
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
-    "cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
-    "92.4.131.203",
+    "https://adrianchan101-techspacehub-backend.hf.space",
 ] + [host for host in env_allowed_hosts if host]
 
 # CORS settings - PRODUCTION
@@ -341,8 +289,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
-    "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
-    "https://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "https://adrianchan101-techspacehub-backend.hf.space",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
@@ -379,8 +326,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
-    "http://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
-    "https://cwg4044ocsscwowgko40ssks.92.4.131.203.sslip.io",
+    "https://adrianchan101-techspacehub-backend.hf.space",
 ]
 
 
@@ -450,7 +396,7 @@ ACCOUNT_DEFAULT_HTTP_PROTOCOL = "https"
 
 # Enhanced Security Settings
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = False
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_BROWSER_XSS_FILTER = True
@@ -538,3 +484,25 @@ CELERY_ACCEPT_CONTENT = ["application/json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
+
+# Free tier optimizations for Upstash Redis (10K commands/day limit)
+CELERY_RESULT_BACKEND = "django-db"  # Store results in Supabase, not Redis
+CELERY_TASK_IGNORE_RESULT = True  # Don't store task results by default (saves Redis commands)
+CELERY_ACKS_LATE = True  # Acknowledge after task completes (safer on free tier)
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Only prefetch 1 task at a time (prevents hoarding)
+CELERY_TASK_MAX_RETRIES = 1
+CELERY_TASK_DEFAULT_RETRY_DELAY = 60
+
+# Global rate limiting to protect free Redis limits (2 scans/hour = ~48 commands/day)
+# Each scan uses ~24 Redis commands (reserve, ack, result storage if enabled)
+# This keeps us well under 10K/day even with other app usage
+CELERY_TASK_ANNOTATIONS = {
+    'services.audits.tasks.run_automated_scan': {
+        'rate_limit': '2/h',  # Enforced globally as backup
+    }
+}
+
+# Worker settings for free tier (low memory)
+CELERY_WORKER_MAX_TASKS_PER_CHILD = 10  # Restart worker after 10 tasks (prevents memory leaks)
+CELERY_WORKER_SEND_TASK_EVENTS = False  # Disable events (saves Redis commands)
+CELERY_TASK_SEND_SENT_EVENT = False

@@ -1,0 +1,88 @@
+services:
+  # ========== WEB SERVICE (Daphne + Django) ==========
+  - type: web
+    name: cybercraft-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: /app/start-web.sh
+    
+    domains:
+      - api.techspacehub.co.ke
+    
+    envVars:
+      # ========== EXTERNAL SERVICES (From .env) ==========
+      - key: DATABASE_URL
+        sync: false  
+      - key: REDIS_URL
+        sync: false  
+      - key: CELERY_BROKER_URL
+        sync: false  
+      - key: CELERY_RESULT_BACKEND
+        sync: false  
+      
+      # ========== APP CONFIG ==========
+      - key: DEBUG
+        value: "False"
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: FRONTEND_URL
+        value: "https://techspacehub.co.ke"
+      
+      
+      - key: SECRET_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+      - key: MPESA_CALLBACK_URL
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: LIPANA_SECRET_KEY
+        sync: false
+      - key: LIPANA_WEBHOOK_SECRET
+        sync: false
+      - key: LIPANA_ENVIRONMENT
+        value: production
+  
+  # ========== CELERY WORKER (Background tasks) ==========
+  - type: background_worker
+    name: cybercraft-celery
+    env: docker
+    dockerfilePath: ./Dockerfile
+    startCommand: /app/start-celery.sh
+    
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: SECRET_KEY
+        sync: false
