@@ -281,6 +281,7 @@ ALLOWED_HOSTS = [
     "techspacehub.co.ke",
     "www.techspacehub.co.ke",
     "api.techspacehub.co.ke",
+    "techspacehub-backend.onrender.com",
     "https://adrianchan101-techspacehub-backend.hf.space",
 ] + [host for host in env_allowed_hosts if host]
 
@@ -289,6 +290,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
+    "https://techspacehub-backend.onrender.com",
     "https://adrianchan101-techspacehub-backend.hf.space",
 ]
 
@@ -326,6 +328,7 @@ CSRF_TRUSTED_ORIGINS = [
     "https://techspacehub.co.ke",
     "https://www.techspacehub.co.ke",
     "https://api.techspacehub.co.ke",
+    "https://techspacehub-backend.onrender.com",
     "https://adrianchan101-techspacehub-backend.hf.space",
 ]
 
