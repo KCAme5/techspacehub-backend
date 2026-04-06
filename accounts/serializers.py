@@ -12,6 +12,7 @@ from django.utils import timezone
 from .models import Wallet, WalletTransaction, WithdrawalRequest, Referral
 from django.conf import settings
 from .email_utils import send_verification_email, send_password_reset_email
+from .tasks import send_verification_email_task, send_password_reset_email_task
 
 import logging
 
@@ -33,7 +34,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         value = value.strip().lower()
         validate_email(value)
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Email already in use.")
+            raise serializers.ValidationError("User with this email already exists. Please log in or use a different email.")
         return value
 
     def create(self, validated_data):
@@ -83,13 +84,15 @@ class RegisterSerializer(serializers.ModelSerializer):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
+        # Send verification email asynchronously via Celery (non-blocking)
         try:
-            send_verification_email(user.email, uid, token)
+            send_verification_email_task.delay(user.email, uid, token)
+            logger.info(f"Queued verification email task for {user.email}")
         except Exception as e:
-            logger.warning(
-                f"Failed to send verification email for {user.email}: {str(e)}"
+            logger.error(
+                f"Failed to queue verification email task for {user.email}: {str(e)}"
             )
-            # Don't fail registration if email sending fails
+            # Don't fail registration if task queuing fails
 
         return user
 
