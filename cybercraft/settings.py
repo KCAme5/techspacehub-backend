@@ -7,20 +7,7 @@ from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# -------------------------------
-# CELERY CONFIG (must be early!)
-# -------------------------------
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
-
-# Safety print for logs
-print(f"[CELERY] BROKER: {CELERY_BROKER_URL}")
-print(f"[CELERY] BACKEND: {CELERY_RESULT_BACKEND}")
-
-if not CELERY_BROKER_URL:
-    print("[WARNING] CELERY_BROKER_URL not set. Celery tasks will not work.")
-
-# --- LOAD ENVIRONMENT VARIABLES ---
+# --- LOAD ENVIRONMENT VARIABLES FIRST ---
 # Try multiple locations for .env
 env_locations = [
     os.path.join(BASE_DIR, ".env"),
@@ -38,6 +25,19 @@ for loc in env_locations:
 
 if not env_found:
     print("[Config] WARNING: No .env file found. Using system environment variables.")
+
+# -------------------------------
+# CELERY CONFIG (after env loaded)
+# -------------------------------
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+
+# Safety print for logs
+print(f"[CELERY] BROKER: {CELERY_BROKER_URL}")
+print(f"[CELERY] BACKEND: {CELERY_RESULT_BACKEND}")
+
+if not CELERY_BROKER_URL:
+    print("[WARNING] CELERY_BROKER_URL not set. Celery tasks will not work.")
 
 # Security
 SECRET_KEY = os.getenv("SECRET_KEY", "generate-a-strong-key-here-for-now")
@@ -68,13 +68,6 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@techspacehub.co.ke")
-
-# Email backend - async via Celery if broker available, otherwise sync SMTP
-if CELERY_BROKER_URL:
-    EMAIL_BACKEND = "django_celery_email.backends.CeleryEmailBackend"
-    CELERY_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-else:
-    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # Application definition
 INSTALLED_APPS = [
@@ -118,9 +111,26 @@ INSTALLED_APPS = [
     "django_celery_results",
 ]
 
-# Conditionally add async email only when Celery broker is available
+# Conditionally add django_celery_email only when celery broker is available AND module imports successfully
+ENABLE_CELERY_EMAIL = False
 if CELERY_BROKER_URL:
-    INSTALLED_APPS.insert(-1, "django_celery_email")  # Add before django_celery_results
+    try:
+        import django_celery_email  # Try to import
+        INSTALLED_APPS.insert(-1, "django_celery_email")  # Add before django_celery_results
+        ENABLE_CELERY_EMAIL = True
+        print("[Config] ✓ django_celery_email enabled (async email via Celery)")
+    except ImportError as e:
+        print(f"[Config] WARNING: Could not import django_celery_email: {e}")
+        print("[Config] Falling back to synchronous SMTP email")
+else:
+    print("[Config] INFO: Using synchronous SMTP email (no Celery broker)")
+
+# Email backend - async via Celery if broker available AND module loaded, otherwise sync SMTP
+if ENABLE_CELERY_EMAIL:
+    EMAIL_BACKEND = "django_celery_email.backends.CeleryEmailBackend"
+    CELERY_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 
 SITE_ID = 1
