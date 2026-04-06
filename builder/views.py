@@ -17,11 +17,14 @@ from django.shortcuts import get_object_or_404
 from .models import UserCredits, CreditPackage, CreditPayment, GenerationSession
 from .serializers import UserCreditsSerializer, CreditPackageSerializer
 from .services.credit_service import get_or_create_credits
+from .services.prompt_validator import get_prompt_validator
+from .services.error_extractor import get_error_extractor
+from .services.error_fixer import get_error_fixer
 from .ai import GroqBuilderClient, GeminiBuilderClient
 from .ai.stepfun_client import OpenRouterBuilderClient
 
 from payments.services import initiate_stk_push
-from .serializers import GenerationSessionSerializer
+from .serializers import GenerationSessionSerializer, CreditPackageSerializer
 import requests as ext_requests
 from urllib.parse import urlparse
 from django.http import HttpResponse
@@ -72,7 +75,162 @@ class CreditPackagesView(APIView):
         return Response(CreditPackageSerializer(packages, many=True).data)
 
 
-class PurchaseCreditsView(APIView):
+class ValidatePromptView(APIView):
+    """
+    POST /api/builder/validate-prompt/
+    Validates that a user's prompt is actually requesting website generation.
+    
+    Body: { prompt: str }
+    
+    Response:
+    { 
+        "is_valid": true/false,
+        "reason": str,
+        "suggestion": str (only if invalid)
+    }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        prompt = request.data.get("prompt", "").strip()
+
+        if not prompt:
+            return Response(
+                {
+                    "is_valid": False,
+                    "reason": "Prompt cannot be empty",
+                    "suggestion": "Try: 'Create a landing page for my coffee shop'",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validator = get_prompt_validator()
+            result = validator.validate(prompt)
+            
+            logger.info(
+                f"Prompt validation for user {request.user.username}: "
+                f"valid={result['is_valid']}, reason={result['reason']}"
+            )
+            
+            return Response(result, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Validation error: {e}")
+            # On error, allow request (validation skipped)
+            return Response(
+                {
+                    "is_valid": True,
+                    "reason": "Validation service temporarily unavailable (request allowed)",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+
+class FixErrorView(APIView):
+    """
+    POST /api/builder/fix-error/
+    Analyzes a console error and generates AI-suggested fixes.
+    
+    Body: {
+        "error_message": str,
+        "code_snippet": str (optional),
+        "file_path": str (optional),
+        "language": str (optional, defaults to "javascript")
+    }
+    
+    Response:
+    {
+        "success": bool,
+        "error_info": {
+            "error_type": str,
+            "message": str,
+            "language": str,
+            "severity": str,
+            "file_path": str,
+            "line_number": int,
+            "suggestion": str
+        },
+        "fix": {
+            "explanation": str,
+            "fixed_code": str,
+            "files_to_update": list,
+            "alternative": str (optional)
+        }
+    }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        error_message = request.data.get("error_message", "").strip()
+
+        if not error_message:
+            return Response(
+                {
+                    "success": False,
+                    "error": "error_message is required",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # 1. Extract error information
+            extractor = get_error_extractor()
+            error_info = extractor.extract(error_message)
+
+            error_info_dict = {
+                "error_type": error_info.error_type,
+                "message": error_info.message,
+                "language": error_info.language,
+                "severity": error_info.severity,
+                "file_path": error_info.file_path,
+                "line_number": error_info.line_number,
+                "suggestion": error_info.suggestion,
+                "is_blocking": error_info.is_blocking,
+            }
+
+            # 2. Generate AI fix
+            fixer = get_error_fixer()
+            fix_context = {
+                "error_message": error_message,
+                "code_snippet": request.data.get("code_snippet", ""),
+                "file_path": request.data.get("file_path", "unknown"),
+                "language": request.data.get("language", error_info.language),
+            }
+
+            ai_fix = fixer.get_ai_fix(fix_context)
+
+            logger.info(
+                f"Error fix generated for user {request.user.username}: "
+                f"error_type={error_info.error_type}, has_fix={ai_fix is not None}"
+            )
+
+            response_data = {
+                "success": True,
+                "error_info": error_info_dict,
+                "fix": ai_fix,
+            }
+
+            return Response(response_data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Error fixing failed: {e}", exc_info=True)
+            return Response(
+                {
+                    "success": False,
+                    "error": "Failed to analyze error and generate fix",
+                    "error_info": {
+                        "error_type": "UnknownError",
+                        "message": error_message[:200],
+                        "language": "unknown",
+                    },
+                },
+                status=status.HTTP_200_OK,  # Still 200 to allow frontend to handle gracefully
+            )
+
+
+
     """
     POST /api/builder/credits/purchase/
     Body: { package_id, phone_number }
@@ -259,6 +417,95 @@ class DeductCreditView(APIView):
         except UserCredits.DoesNotExist:
             return Response(
                 {"error": "No credit account found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class PurchaseCreditsView(APIView):
+    """
+    POST /api/builder/credits/purchase/
+    Initiates a credit purchase via M-Pesa STK push.
+    Body: { package_id: uuid } OR { credits: int, phone: str }
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            package_id = request.data.get("package_id")
+            phone = request.data.get("phone", "").strip()
+            credits = request.data.get("credits")
+
+            # Option 1: Purchase by package
+            if package_id:
+                package = get_object_or_404(CreditPackage, id=package_id, is_active=True)
+                credits = package.credits
+                amount = package.price_kes
+                package_name = package.name
+            # Option 2: Custom amount
+            elif credits and phone:
+                credits = int(credits)
+                if credits < 10:
+                    return Response(
+                        {"error": "Minimum 10 credits required"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                amount = credits * 10
+                package_name = f"Custom {credits} credits"
+            else:
+                return Response(
+                    {"error": "Either provide package_id or credits + phone"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Clean phone number
+            phone = phone.replace(" ", "")
+            if phone.startswith("07"):
+                phone = "254" + phone[1:]
+            elif phone.startswith("+254"):
+                phone = phone[1:]
+            elif phone.startswith("254"):
+                pass
+            else:
+                return Response(
+                    {"error": "Invalid phone format. Use 07xxxxxxxxx or 254xxxxxxxxx"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Create payment record
+            with transaction.atomic():
+                payment = CreditPayment.objects.create(
+                    user=request.user,
+                    package=package if package_id else None,
+                    amount=amount,
+                    credits=credits,
+                    phone_number=phone,
+                    status="pending",
+                )
+
+                ref = f"BUILDER-{payment.id}"
+                description = f"Purchase {credits} credits ({package_name})"
+                result = initiate_stk_push(
+                    phone=phone,
+                    amount=float(amount),
+                    ref=ref,
+                    description=description,
+                )
+
+                payment.mpesa_checkout_id = result.get("CheckoutRequestID", "")
+                payment.save()
+
+            return Response(
+                {
+                    "payment_id": str(payment.id),
+                    "status": "pending",
+                    "checkout_request_id": payment.mpesa_checkout_id,
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Purchase credits error for {request.user.username}: {e}")
+            return Response(
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
 

@@ -6,6 +6,8 @@ from django.urls import path
 from .views import (
     CreditBalanceView,
     CreditPackagesView,
+    ValidatePromptView,
+    FixErrorView,
     PurchaseCreditsView,
     CreditPaymentStatusView,
     MpesaCreditCallbackView,
@@ -24,6 +26,8 @@ from .views import (
 urlpatterns = [
     path("credits/balance/", CreditBalanceView.as_view(), name="credit-balance"),
     path("credits/packages/", CreditPackagesView.as_view(), name="credit-packages"),
+    path("validate-prompt/", ValidatePromptView.as_view(), name="validate-prompt"),
+    path("fix-error/", FixErrorView.as_view(), name="fix-error"),
     path("credits/purchase/", PurchaseCreditsView.as_view(), name="credit-purchase"),
     path(
         "credits/payment-status/<uuid:payment_id>/",

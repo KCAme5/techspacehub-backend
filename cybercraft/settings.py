@@ -65,10 +65,13 @@ EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp-relay.brevo.com")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@techspacehub.co.ke")
+
+# Async email via Celery (prevent blocking registration)
+EMAIL_BACKEND = "django_celery_email.backends.CeleryEmailBackend"
+CELERY_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # Application definition
 INSTALLED_APPS = [
@@ -91,6 +94,7 @@ INSTALLED_APPS = [
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
     "allauth.socialaccount.providers.github",
+    "django_celery_email",  # async email via Celery
     # my apps
     "accounts",
     "courses",

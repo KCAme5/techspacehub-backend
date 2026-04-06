@@ -7,14 +7,11 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "cybercraft.settings")
 
 app = Celery("cybercraft")
 
-app.autodiscover_tasks(
-    [
-        "services.audits.tasks",
-    ]
-)
-
 # Load config from Django settings with CELERY_ namespace
 app.config_from_object("django.conf:settings", namespace="CELERY")
+
+# Autodiscover tasks from all installed apps
+app.autodiscover_tasks()
 
 
 @app.task(bind=True, ignore_result=True)

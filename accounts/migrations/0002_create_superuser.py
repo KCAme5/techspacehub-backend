@@ -24,7 +24,8 @@ def create_superuser(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("accounts", "0001_initial"),
+        ("accounts", "0007_add_xp_rank_fields"),
+        ("builder", "0001_initial"),
     ]
 
     operations = [
