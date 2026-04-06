@@ -34,10 +34,29 @@ from django.http import HttpResponse
 logger = logging.getLogger(__name__)
 
 
+BUILDER_MODEL_MAP = {
+    "stepfun": "stepfun/step-3.5-flash",
+    "qwen": "qwen/qwen3-235b-a22b",
+    "trinity": "arcee-ai/trinity-large-preview:free",
+    "gpt-oss": "openai/gpt-oss-120b:free",
+    "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
+    "glm": "z-ai/glm-4.5-air:free",
+    "hunter": "openrouter/hunter-alpha",
+    "healer": "openrouter/healer-alpha",
+    "minimax": "minimax/minimax-m2.5:free",
+}
+DEFAULT_BUILDER_MODEL = "stepfun"
+
+
 def route_builder_message(prompt, has_existing_project=False):
     """Classify a builder message before generation or edit work starts."""
     validator = get_prompt_validator()
     return validator.route(prompt, has_existing_project=has_existing_project)
+
+
+def resolve_builder_model(selected_model):
+    key = (selected_model or DEFAULT_BUILDER_MODEL).strip().lower()
+    return BUILDER_MODEL_MAP.get(key, BUILDER_MODEL_MAP[DEFAULT_BUILDER_MODEL])
 
 
 def restore_generation_credit(user):
@@ -131,6 +150,35 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
     preview_url = session.preview_url or ""
     last_error = ""
     completed = False
+    completion_persisted = False
+
+    def persist_completed_state():
+        session.files = last_files
+        session.explanation = explanation
+        session.preview_url = preview_url
+        session.last_error = ""
+        session.status = "done"
+        session.build_status = "completed"
+        session.verification_status = "pending"
+        session.raw_response = "".join(raw_events)
+        session.build_logs = build_logs[-200:]
+        if session.runtime_provider == "none":
+            session.runtime_status = "prepared"
+        session.save(
+            update_fields=[
+                "files",
+                "explanation",
+                "raw_response",
+                "status",
+                "build_status",
+                "build_logs",
+                "last_error",
+                "preview_url",
+                "runtime_status",
+                "verification_status",
+                "updated_at",
+            ]
+        )
 
     try:
         for event in stream:
@@ -160,6 +208,8 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
                         _append_build_log(build_logs, payload["error"])
                     if payload.get("complete") or payload.get("done"):
                         completed = True
+                        persist_completed_state()
+                        completion_persisted = True
             yield event
     except Exception as exc:
         logger.error("Stream persistence error for session %s: %s", session.id, exc, exc_info=True)
@@ -171,15 +221,8 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
         session.build_logs = build_logs[-200:]
 
         if completed:
-            session.files = last_files
-            session.explanation = explanation
-            session.preview_url = preview_url
-            session.last_error = ""
-            session.status = "done"
-            session.build_status = "completed"
-            session.verification_status = "pending"
-            if session.runtime_provider == "none":
-                session.runtime_status = "prepared"
+            if not completion_persisted:
+                persist_completed_state()
         else:
             session.last_error = last_error or "Generation did not complete successfully."
             session.status = "error"
@@ -853,7 +896,7 @@ class GenerateView(APIView):
         prompt = request.data.get("prompt", "").strip()
         output_type = request.data.get("output_type", "react")
         style_preset = request.data.get("style_preset", "")
-        selected_model = request.data.get("model", "trinity")
+        selected_model = request.data.get("model", DEFAULT_BUILDER_MODEL)
         existing_files = request.data.get("existing_files", None)
 
         # Validation
@@ -909,18 +952,7 @@ class GenerateView(APIView):
             credits_used=1,
         )
 
-        # Model mapping
-        model_map = {
-            "trinity": "arcee-ai/trinity-large-preview:free",
-            "gpt-oss": "openai/gpt-oss-120b:free",
-            "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
-            "stepfun": "stepfun/step-3.5-flash",
-            "glm": "z-ai/glm-4.5-air:free",
-            "hunter": "openrouter/hunter-alpha",
-            "healer": "openrouter/healer-alpha",
-            "minimax": "minimax/minimax-m2.5:free",
-        }
-        model_name = model_map.get(selected_model, model_map["trinity"])
+        model_name = resolve_builder_model(selected_model)
 
         def stream_response():
             """Generator yielding SSE events via AgentOrchestrator."""
@@ -1723,6 +1755,7 @@ class ChatView(APIView):
     def post(self, request, session_id):
         """Continue conversation with context."""
         user_message = request.data.get("message", "").strip()
+        selected_model = request.data.get("model", DEFAULT_BUILDER_MODEL)
         
         if not user_message:
             return Response(
@@ -1799,18 +1832,7 @@ class ChatView(APIView):
         existing_files = session.files
         output_type = session.output_type
         
-        # Model selection (use same as original session)
-        model_map = {
-            "trinity": "arcee-ai/trinity-large-preview:free",
-            "gpt-oss": "openai/gpt-oss-120b:free",
-            "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
-            "stepfun": "stepfun/step-3.5-flash",
-            "glm": "z-ai/glm-4.5-air:free",
-            "hunter": "openrouter/hunter-alpha",
-            "healer": "openrouter/healer-alpha",
-            "minimax": "minimax/minimax-m2.5:free",
-        }
-        model_name = model_map.get("trinity", model_map["trinity"])
+        model_name = resolve_builder_model(selected_model)
 
         def stream_response():
             try:

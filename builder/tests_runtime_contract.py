@@ -31,7 +31,10 @@ class RuntimeProviderTestCase(TestCase):
 
         self.assertEqual(bundle.provider, "webcontainer")
         self.assertEqual(bundle.runtime_status, "prepared")
-        self.assertEqual(bundle.payload["commands"]["install"], ["npm", "install"])
+        self.assertEqual(
+            bundle.payload["commands"]["install"],
+            ["npm", "install", "--no-fund", "--no-audit", "--progress=false"],
+        )
         self.assertEqual(bundle.payload["preview"]["port"], 4173)
 
 
