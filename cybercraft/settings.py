@@ -69,9 +69,12 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@techspacehub.co.ke")
 
-# Async email via Celery (prevent blocking registration)
-EMAIL_BACKEND = "django_celery_email.backends.CeleryEmailBackend"
-CELERY_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+# Email backend - async via Celery if broker available, otherwise sync SMTP
+if CELERY_BROKER_URL:
+    EMAIL_BACKEND = "django_celery_email.backends.CeleryEmailBackend"
+    CELERY_EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # Application definition
 INSTALLED_APPS = [
@@ -94,7 +97,6 @@ INSTALLED_APPS = [
     "allauth.socialaccount",
     "allauth.socialaccount.providers.google",
     "allauth.socialaccount.providers.github",
-    "django_celery_email",  # async email via Celery
     # my apps
     "accounts",
     "courses",
@@ -115,6 +117,10 @@ INSTALLED_APPS = [
     # Celery Results (store in DB instead of Redis)
     "django_celery_results",
 ]
+
+# Conditionally add async email only when Celery broker is available
+if CELERY_BROKER_URL:
+    INSTALLED_APPS.insert(-1, "django_celery_email")  # Add before django_celery_results
 
 
 SITE_ID = 1
