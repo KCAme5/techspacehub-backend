@@ -4,6 +4,7 @@ import logging
 import io
 import zipfile
 import base64
+import re
 from django.db import transaction
 from django.db.models import F
 from django.http import StreamingHttpResponse
@@ -20,6 +21,7 @@ from .services.credit_service import get_or_create_credits
 from .services.prompt_validator import get_prompt_validator
 from .services.error_extractor import get_error_extractor
 from .services.error_fixer import get_error_fixer
+from .services.runtime_provider import get_runtime_provider
 from .ai import GroqBuilderClient, GeminiBuilderClient
 from .ai.stepfun_client import OpenRouterBuilderClient
 
@@ -30,6 +32,178 @@ from urllib.parse import urlparse
 from django.http import HttpResponse
 
 logger = logging.getLogger(__name__)
+
+
+def route_builder_message(prompt, has_existing_project=False):
+    """Classify a builder message before generation or edit work starts."""
+    validator = get_prompt_validator()
+    return validator.route(prompt, has_existing_project=has_existing_project)
+
+
+def restore_generation_credit(user):
+    """Refund one builder credit after a failed generation/edit attempt."""
+    try:
+        UserCredits.objects.filter(user=user).update(
+            credits=F("credits") + 1,
+            total_used=F("total_used") - 1,
+        )
+    except Exception as exc:
+        logger.error("Credit restore failed for %s: %s", user.username, exc)
+
+
+def _append_build_log(logs, message):
+    if not message:
+        return
+    text = str(message).strip()
+    if text:
+        logs.append(text[:1000])
+
+
+def _find_file_content(files, file_path):
+    if not file_path:
+        return ""
+    normalized = file_path.lower()
+    for file_data in files or []:
+        if file_data.get("name", "").lower() == normalized:
+            return file_data.get("content", "")
+    return ""
+
+
+def _apply_fix_to_session_files(files, fix_data, preferred_file_path=""):
+    updated_files = [dict(file_data) for file_data in (files or [])]
+    target_files = fix_data.get("files_to_update") or []
+    if preferred_file_path:
+        target_files = [preferred_file_path, *target_files]
+
+    chosen_path = next((path for path in target_files if path), "")
+    fixed_code = fix_data.get("fixed_code", "")
+    if not chosen_path or not fixed_code:
+        return None
+
+    chosen_path = _normalize_fix_target_path(chosen_path)
+    if not chosen_path:
+        return None
+
+    for file_data in updated_files:
+        if file_data.get("name", "").lower() == chosen_path:
+            file_data["content"] = fixed_code
+            return updated_files
+
+    if chosen_path in _allowed_new_fix_targets():
+        updated_files.append({"name": chosen_path, "content": fixed_code})
+        return updated_files
+
+    return None
+
+
+def _normalize_fix_target_path(path):
+    candidate = (path or "").replace("\\", "/").strip().lower()
+    candidate = re.sub(r"^\.\/", "", candidate)
+    if not candidate or ".." in candidate or candidate.startswith("/") or ":" in candidate:
+        return ""
+    if not re.match(r"^[a-z0-9_./-]+\.(jsx|js|css|html|json)$", candidate):
+        return ""
+    return candidate
+
+
+def _allowed_new_fix_targets():
+    return {
+        "src/app.jsx",
+        "src/main.jsx",
+        "src/index.css",
+        "index.html",
+        "package.json",
+        "vite.config.js",
+        "tailwind.config.js",
+        "postcss.config.js",
+    }
+    return updated_files
+
+
+def stream_and_persist_session(stream, session, user, fallback_explanation, restore_credit_on_failure=False):
+    """
+    Proxy streamed SSE events to the client while persisting session lifecycle state.
+    """
+    raw_events = []
+    build_logs = list(session.build_logs or [])
+    last_files = list(session.files or [])
+    explanation = session.explanation or fallback_explanation
+    preview_url = session.preview_url or ""
+    last_error = ""
+    completed = False
+
+    try:
+        for event in stream:
+            if isinstance(event, str) and event.startswith("data: "):
+                raw_events.append(event)
+                data_str = event[6:].strip()
+                try:
+                    payload = json.loads(data_str)
+                except json.JSONDecodeError:
+                    payload = None
+
+                if payload:
+                    _append_build_log(build_logs, payload.get("status"))
+                    _append_build_log(build_logs, payload.get("progress"))
+                    _append_build_log(build_logs, payload.get("log"))
+
+                    if "files" in payload:
+                        last_files = payload["files"]
+                    if payload.get("explanation"):
+                        explanation = payload["explanation"]
+                    elif payload.get("summary"):
+                        explanation = payload["summary"]
+                    if payload.get("preview_url"):
+                        preview_url = payload["preview_url"]
+                    if payload.get("error"):
+                        last_error = payload["error"]
+                        _append_build_log(build_logs, payload["error"])
+                    if payload.get("complete") or payload.get("done"):
+                        completed = True
+            yield event
+    except Exception as exc:
+        logger.error("Stream persistence error for session %s: %s", session.id, exc, exc_info=True)
+        last_error = str(exc)
+        _append_build_log(build_logs, last_error)
+        yield f'data: {json.dumps({"error": last_error})}\n\n'
+    finally:
+        session.raw_response = "".join(raw_events)
+        session.build_logs = build_logs[-200:]
+
+        if completed:
+            session.files = last_files
+            session.explanation = explanation
+            session.preview_url = preview_url
+            session.last_error = ""
+            session.status = "done"
+            session.build_status = "completed"
+            session.verification_status = "pending"
+            if session.runtime_provider == "none":
+                session.runtime_status = "prepared"
+        else:
+            session.last_error = last_error or "Generation did not complete successfully."
+            session.status = "error"
+            session.build_status = "failed"
+            session.runtime_status = "failed"
+            session.verification_status = "failed"
+            if restore_credit_on_failure:
+                restore_generation_credit(user)
+
+        session.save(
+            update_fields=[
+                "files",
+                "explanation",
+                "raw_response",
+                "status",
+                "build_status",
+                "build_logs",
+                "last_error",
+                "preview_url",
+                "runtime_status",
+                "verification_status",
+                "updated_at",
+            ]
+        )
 
 
 class CreditBalanceView(APIView):
@@ -106,12 +280,11 @@ class ValidatePromptView(APIView):
             )
 
         try:
-            validator = get_prompt_validator()
-            result = validator.validate(prompt)
+            result = route_builder_message(prompt)
             
             logger.info(
                 f"Prompt validation for user {request.user.username}: "
-                f"valid={result['is_valid']}, reason={result['reason']}"
+                f"intent={result['intent']}, valid={result['is_valid']}, reason={result['reason']}"
             )
             
             return Response(result, status=status.HTTP_200_OK)
@@ -120,11 +293,48 @@ class ValidatePromptView(APIView):
             # On error, allow request (validation skipped)
             return Response(
                 {
-                    "is_valid": True,
-                    "reason": "Validation service temporarily unavailable (request allowed)",
+                    "is_valid": False,
+                    "intent": "unclear",
+                    "should_generate": False,
+                    "response": "I can help with chat or website building. Tell me what you want to create.",
+                    "reason": "Validation service temporarily unavailable",
                 },
                 status=status.HTTP_200_OK,
             )
+
+
+class AssistantMessageView(APIView):
+    """
+    POST /api/builder/assistant/message/
+    Routes a user message before the frontend decides whether to chat or generate.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        message = request.data.get("message", "").strip()
+        session_id = request.data.get("session_id")
+
+        if not message:
+            return Response(
+                {"error": "Message is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session = None
+        if session_id:
+            session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+
+        route = route_builder_message(
+            message,
+            has_existing_project=bool(session and session.files),
+        )
+        payload = {
+            "message": message,
+            "session_id": str(session.id) if session else None,
+            **route,
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class FixErrorView(APIView):
@@ -652,6 +862,20 @@ class GenerateView(APIView):
                 {"error": "Prompt is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
+        route = route_builder_message(prompt, has_existing_project=bool(existing_files))
+        if not route["should_generate"]:
+            return Response(
+                {
+                    "error": "NON_BUILD_INTENT",
+                    "intent": route["intent"],
+                    "reason": route["reason"],
+                    "assistant_response": route["response"],
+                    "suggestion": route["suggestion"],
+                    "should_generate": False,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Credit check
         try:
             with transaction.atomic():
@@ -679,6 +903,9 @@ class GenerateView(APIView):
             output_type=output_type,
             style_preset=style_preset,
             status="generating",
+            intent_type=route["intent"],
+            build_status="generating",
+            build_attempts=1,
             credits_used=1,
         )
 
@@ -700,18 +927,29 @@ class GenerateView(APIView):
             from .services.agent_orchestrator import AgentOrchestrator
             
             # The frontend should ideally send a session_id, but for now we generate one
-            session_id = request.data.get("session_id")
-            orchestrator = AgentOrchestrator(session_id=session_id)
+            orchestrator = AgentOrchestrator(session_id=str(session.id))
             
             try:
-                yield from orchestrator.stream_build(
+                stream = orchestrator.stream_build(
                     prompt=prompt,
                     model_name=model_name,
                     existing_files=existing_files,
                     is_chat=False
                 )
+                yield from stream_and_persist_session(
+                    stream=stream,
+                    session=session,
+                    user=request.user,
+                    fallback_explanation="Generated the requested website.",
+                    restore_credit_on_failure=True,
+                )
             except Exception as e:
                 logger.error(f"Generate stream error: {e}", exc_info=True)
+                session.status = "error"
+                session.build_status = "failed"
+                session.last_error = str(e)
+                session.save(update_fields=["status", "build_status", "last_error", "updated_at"])
+                restore_generation_credit(request.user)
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
         response = StreamingHttpResponse(
@@ -753,6 +991,310 @@ class SessionDetailView(APIView):
             return Response(
                 {"error": "Session not found"}, status=status.HTTP_404_NOT_FOUND
             )
+
+
+class RuntimeSessionDetailView(APIView):
+    """GET /api/builder/sessions/<id>/runtime/ - Return runtime state for a session."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+        return Response(
+            {
+                "session_id": str(session.id),
+                "runtime_provider": session.runtime_provider,
+                "runtime_status": session.runtime_status,
+                "runtime_session_id": session.runtime_session_id,
+                "runtime_metadata": session.runtime_metadata,
+                "preview_url": session.preview_url,
+                "build_status": session.build_status,
+                "files_count": len(session.files or []),
+            }
+        )
+
+
+class RuntimePrepareView(APIView):
+    """POST /api/builder/sessions/<id>/runtime/prepare/ - Build runtime bootstrap payload."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+
+        if not session.files:
+            return Response(
+                {"error": "SESSION_HAS_NO_FILES"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        provider = get_runtime_provider(session.output_type)
+        runtime_bundle = provider.prepare(session)
+
+        session.runtime_provider = runtime_bundle.provider
+        session.runtime_status = runtime_bundle.runtime_status
+        session.runtime_session_id = runtime_bundle.runtime_session_id
+        session.runtime_metadata = {
+            **(session.runtime_metadata or {}),
+            "prepare_count": int((session.runtime_metadata or {}).get("prepare_count", 0)) + 1,
+            "output_type": session.output_type,
+            "provider_payload_version": 1,
+        }
+        session.save(
+            update_fields=[
+                "runtime_provider",
+                "runtime_status",
+                "runtime_session_id",
+                "runtime_metadata",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            {
+                "session_id": str(session.id),
+                "runtime_provider": session.runtime_provider,
+                "runtime_status": session.runtime_status,
+                "runtime_session_id": session.runtime_session_id,
+                "runtime": runtime_bundle.payload,
+            }
+        )
+
+
+class RuntimeEventView(APIView):
+    """POST /api/builder/sessions/<id>/runtime/event/ - Persist runtime events from the frontend."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+        runtime_status = request.data.get("runtime_status", "").strip()
+        runtime_session_id = request.data.get("runtime_session_id", "").strip()
+        preview_url = request.data.get("preview_url", "").strip()
+        metadata = request.data.get("runtime_metadata", {}) or {}
+        log_entry = request.data.get("log", "").strip()
+        browser_errors = request.data.get("browser_errors")
+
+        valid_runtime_states = {
+            "prepared",
+            "booting",
+            "running",
+            "ready",
+            "failed",
+        }
+        if runtime_status and runtime_status not in valid_runtime_states:
+            return Response(
+                {"error": "INVALID_RUNTIME_STATUS"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if runtime_session_id:
+            session.runtime_session_id = runtime_session_id
+        if runtime_status:
+            session.runtime_status = runtime_status
+        if preview_url:
+            session.preview_url = preview_url
+
+        merged_metadata = dict(session.runtime_metadata or {})
+        if isinstance(metadata, dict):
+            merged_metadata.update(metadata)
+        if browser_errors is not None:
+            merged_metadata["browser_errors"] = browser_errors
+        session.runtime_metadata = merged_metadata
+
+        if log_entry:
+            build_logs = list(session.build_logs or [])
+            _append_build_log(build_logs, f"[runtime] {log_entry}")
+            session.build_logs = build_logs[-200:]
+
+        if runtime_status == "failed":
+            session.last_error = request.data.get("error", "").strip() or session.last_error
+            if session.last_error:
+                session.build_status = "failed"
+
+        session.save(
+            update_fields=[
+                "runtime_session_id",
+                "runtime_status",
+                "runtime_metadata",
+                "preview_url",
+                "build_logs",
+                "last_error",
+                "build_status",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            {
+                "session_id": str(session.id),
+                "runtime_provider": session.runtime_provider,
+                "runtime_status": session.runtime_status,
+                "runtime_session_id": session.runtime_session_id,
+                "preview_url": session.preview_url,
+            }
+        )
+
+
+class RuntimeVerifyView(APIView):
+    """POST /api/builder/sessions/<id>/runtime/verify/ - Persist verification result from runtime."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+        runtime_status = request.data.get("runtime_status", "").strip()
+        error_message = request.data.get("error_message", "").strip()
+        browser_errors = request.data.get("browser_errors", []) or []
+        build_errors = request.data.get("build_errors", []) or []
+
+        session.verification_attempts += 1
+
+        has_errors = bool(error_message or browser_errors or build_errors or runtime_status == "failed")
+        if has_errors:
+            combined_errors = []
+            if error_message:
+                combined_errors.append(error_message)
+            combined_errors.extend(str(err) for err in browser_errors if err)
+            combined_errors.extend(str(err) for err in build_errors if err)
+            session.last_error = "\n".join(combined_errors)[:4000]
+            session.verification_status = "failed"
+            session.build_status = "failed"
+            if runtime_status:
+                session.runtime_status = runtime_status
+            logs = list(session.build_logs or [])
+            _append_build_log(logs, f"[verify] {session.last_error}")
+            session.build_logs = logs[-200:]
+        else:
+            session.verification_status = "verified"
+            session.build_status = "completed"
+            session.runtime_status = runtime_status or "ready"
+            session.last_error = ""
+            logs = list(session.build_logs or [])
+            _append_build_log(logs, "[verify] Runtime verification passed.")
+            session.build_logs = logs[-200:]
+
+        session.save(
+            update_fields=[
+                "verification_attempts",
+                "verification_status",
+                "build_status",
+                "runtime_status",
+                "last_error",
+                "build_logs",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            {
+                "session_id": str(session.id),
+                "verification_status": session.verification_status,
+                "verification_attempts": session.verification_attempts,
+                "build_status": session.build_status,
+                "last_error": session.last_error,
+            }
+        )
+
+
+class RuntimeAutoFixView(APIView):
+    """POST /api/builder/sessions/<id>/runtime/auto-fix/ - Suggest and apply a bounded runtime fix."""
+
+    permission_classes = [IsAuthenticated]
+    MAX_AUTO_FIX_ATTEMPTS = 2
+
+    def post(self, request, session_id):
+        session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+        if session.auto_fix_attempts >= self.MAX_AUTO_FIX_ATTEMPTS:
+            return Response(
+                {"error": "AUTO_FIX_LIMIT_REACHED"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        error_message = request.data.get("error_message", "").strip() or session.last_error
+        if not error_message:
+            return Response(
+                {"error": "ERROR_MESSAGE_REQUIRED"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        file_path = request.data.get("file_path", "").strip()
+        code_snippet = request.data.get("code_snippet", "").strip()
+        if not code_snippet:
+            code_snippet = _find_file_content(session.files, file_path)
+
+        extractor = get_error_extractor()
+        error_info = extractor.extract(error_message)
+        fixer = get_error_fixer()
+        fix_data = fixer.get_ai_fix(
+            {
+                "error_message": error_message,
+                "code_snippet": code_snippet,
+                "file_path": file_path or error_info.file_path or "unknown",
+                "language": request.data.get("language", error_info.language),
+            }
+        )
+        if not fix_data:
+            return Response(
+                {"error": "AUTO_FIX_UNAVAILABLE"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        updated_files = _apply_fix_to_session_files(session.files, fix_data, preferred_file_path=file_path)
+        if updated_files is None:
+            return Response(
+                {"error": "UNSAFE_FIX_TARGET"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        session.auto_fix_attempts += 1
+        session.verification_status = "retrying"
+        session.build_status = "generating"
+        session.status = "generating"
+        session.last_error = error_message
+        session.files = updated_files
+
+        logs = list(session.build_logs or [])
+        _append_build_log(logs, f"[auto-fix] Attempt {session.auto_fix_attempts}: {fix_data.get('explanation', 'Applied runtime fix.')}")
+        session.build_logs = logs[-200:]
+
+        runtime_metadata = dict(session.runtime_metadata or {})
+        runtime_metadata["last_auto_fix"] = {
+            "error_type": error_info.error_type,
+            "file_path": file_path or error_info.file_path,
+            "files_to_update": fix_data.get("files_to_update", []),
+        }
+        session.runtime_metadata = runtime_metadata
+
+        session.save(
+            update_fields=[
+                "auto_fix_attempts",
+                "verification_status",
+                "build_status",
+                "status",
+                "last_error",
+                "files",
+                "build_logs",
+                "runtime_metadata",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            {
+                "session_id": str(session.id),
+                "verification_status": session.verification_status,
+                "auto_fix_attempts": session.auto_fix_attempts,
+                "fix": fix_data,
+                "error_info": {
+                    "error_type": error_info.error_type,
+                    "language": error_info.language,
+                    "file_path": error_info.file_path,
+                    "line_number": error_info.line_number,
+                },
+                "files": session.files,
+            }
+        )
 
 
 class DeleteSessionView(APIView):
@@ -1190,6 +1732,20 @@ class ChatView(APIView):
 
         # Get the existing session
         session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+
+        route = route_builder_message(user_message, has_existing_project=True)
+        if not route["should_generate"]:
+            return Response(
+                {
+                    "intent": route["intent"],
+                    "reason": route["reason"],
+                    "assistant_response": route["response"],
+                    "suggestion": route["suggestion"],
+                    "should_generate": False,
+                    "session_id": str(session.id),
+                },
+                status=status.HTTP_200_OK,
+            )
         
         # Get conversation history
         conversation = session.conversation or []
@@ -1223,6 +1779,22 @@ class ChatView(APIView):
                 status=status.HTTP_402_PAYMENT_REQUIRED
             )
 
+        session.intent_type = route["intent"]
+        session.status = "generating"
+        session.build_status = "generating"
+        session.build_attempts += 1
+        session.last_error = ""
+        session.save(
+            update_fields=[
+                "intent_type",
+                "status",
+                "build_status",
+                "build_attempts",
+                "last_error",
+                "updated_at",
+            ]
+        )
+
         # Build context for AI
         existing_files = session.files
         output_type = session.output_type
@@ -1254,57 +1826,33 @@ class ChatView(APIView):
                     existing_files=existing_files,
                     is_chat=True
                 )
-                
-                last_files = existing_files
-                explanation = "Updated the website based on your instructions."
-                
-                for event_type, data in gen:
-                    if event_type == 'status':
-                        yield f"data: {json.dumps({'status': data})}\n\n"
-                    elif event_type == 'file_created':
-                        if 'files' in data:
-                            last_files = data['files']
-                        yield f"data: {json.dumps({'file_created': data.get('filename')})}\n\n"
-                    elif event_type == 'chunk':
-                        yield f"data: {json.dumps({'chunk': data})}\n\n"
-                    elif event_type == 'thinking':
-                        yield f"data: {json.dumps({'thinking': data})}\n\n"
-                    elif event_type == 'log':
-                        yield f"data: {json.dumps({'log': data})}\n\n"
-                    elif event_type == 'complete':
-                        if 'files' in data:
-                            last_files = data['files']
-                        if 'explanation' in data:
-                            explanation = data['explanation']
-                        
-                        conversation.append({
-                            "role": "assistant",
-                            "content": explanation,
-                            "files": last_files,
-                            "timestamp": timezone.now().isoformat()
-                        })
+                yield from stream_and_persist_session(
+                    stream=gen,
+                    session=session,
+                    user=request.user,
+                    fallback_explanation="Updated the website based on your instructions.",
+                    restore_credit_on_failure=True,
+                )
 
-                        session.files = last_files
-                        session.conversation = conversation
-                        session.explanation = explanation
-                        session.status = "done"
-                        session.save()
-                        
-                        yield f"data: {json.dumps({'complete': True, 'build_verified': True, 'preview_url': data.get('preview_url'), 'files': last_files, 'conversation': conversation})}\n\n"
+                session.refresh_from_db(fields=["status", "files", "explanation", "preview_url"])
+                if session.status == "done":
+                    conversation.append({
+                        "role": "assistant",
+                        "content": session.explanation,
+                        "files": session.files,
+                        "timestamp": timezone.now().isoformat()
+                    })
+                    session.conversation = conversation
+                    session.save(update_fields=["conversation", "updated_at"])
+                    yield f"data: {json.dumps({'complete': True, 'build_verified': False, 'preview_url': session.preview_url, 'files': session.files, 'conversation': conversation})}\n\n"
 
             except Exception as e:
                 logger.error(f"Chat generation error: {e}")
                 session.status = "error"
-                session.save()
-
-                # Restore credits
-                try:
-                    UserCredits.objects.filter(user=request.user).update(
-                        credits=F("credits") + 1,
-                        total_used=F("total_used") - 1
-                    )
-                except Exception as rollback_err:
-                    logger.error(f"Credit restore failed: {rollback_err}")
+                session.build_status = "failed"
+                session.last_error = str(e)
+                session.save(update_fields=["status", "build_status", "last_error", "updated_at"])
+                restore_generation_credit(request.user)
 
                 yield f'data: {json.dumps({"error": str(e)})}\n\n'
 
@@ -1358,4 +1906,3 @@ class ChatView(APIView):
         )
         
         return "\n".join(context_parts)
-

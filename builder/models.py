@@ -95,6 +95,38 @@ class GenerationSession(models.Model):
 
     OUTPUT_TYPES = [("html", "HTML/CSS/JS"), ("react", "React")]
     STATUS = [("generating", "Generating"), ("done", "Done"), ("error", "Error")]
+    INTENT_TYPES = [
+        ("small_talk", "Small Talk"),
+        ("general_help", "General Help"),
+        ("build_new", "Build New"),
+        ("edit_existing", "Edit Existing"),
+        ("fix_error", "Fix Error"),
+        ("unclear", "Unclear"),
+    ]
+    BUILD_STATUS = [
+        ("pending", "Pending"),
+        ("generating", "Generating"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+    ]
+    RUNTIME_PROVIDERS = [
+        ("none", "None"),
+        ("webcontainer", "WebContainer"),
+    ]
+    RUNTIME_STATUS = [
+        ("not_ready", "Not Ready"),
+        ("prepared", "Prepared"),
+        ("booting", "Booting"),
+        ("running", "Running"),
+        ("ready", "Ready"),
+        ("failed", "Failed"),
+    ]
+    VERIFICATION_STATUS = [
+        ("pending", "Pending"),
+        ("verified", "Verified"),
+        ("failed", "Failed"),
+        ("retrying", "Retrying"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(
@@ -127,6 +159,39 @@ class GenerationSession(models.Model):
     explanation = models.TextField(blank=True)
     raw_response = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS, default="generating")
+    intent_type = models.CharField(
+        max_length=30,
+        choices=INTENT_TYPES,
+        default="build_new",
+    )
+    build_status = models.CharField(
+        max_length=20,
+        choices=BUILD_STATUS,
+        default="pending",
+    )
+    build_attempts = models.IntegerField(default=0)
+    build_logs = models.JSONField(default=list)
+    last_error = models.TextField(blank=True)
+    preview_url = models.URLField(max_length=500, blank=True)
+    runtime_provider = models.CharField(
+        max_length=30,
+        choices=RUNTIME_PROVIDERS,
+        default="none",
+    )
+    runtime_status = models.CharField(
+        max_length=20,
+        choices=RUNTIME_STATUS,
+        default="not_ready",
+    )
+    runtime_session_id = models.CharField(max_length=100, blank=True)
+    runtime_metadata = models.JSONField(default=dict)
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VERIFICATION_STATUS,
+        default="pending",
+    )
+    verification_attempts = models.IntegerField(default=0)
+    auto_fix_attempts = models.IntegerField(default=0)
     credits_used = models.IntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
