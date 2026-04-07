@@ -95,6 +95,74 @@ def send_verification_email(user_email, uid, token):
         verify_link = f"{settings.FRONTEND_URL}/verify-email/{uid}/{token}/"
 
         subject = "Verify Your TechSpace Hub Account"
+        html_message = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Verify Your Email</title>
+        </head>
+        <body style="margin:0;padding:0;background:#f4f7fb;font-family:Segoe UI,Arial,sans-serif;color:#102033;">
+            <div style="padding:32px 16px;">
+                <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #dbe4f0;border-radius:24px;overflow:hidden;box-shadow:0 18px 50px rgba(16,32,51,0.08);">
+                    <div style="padding:32px 36px;background:linear-gradient(135deg,#0f3d5e 0%,#1f7a8c 55%,#bfd7ea 100%);color:#ffffff;">
+                        <div style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.86;">TechSpace Hub</div>
+                        <h1 style="margin:14px 0 10px;font-size:32px;line-height:1.15;">Verify your email</h1>
+                        <p style="margin:0;font-size:15px;line-height:1.7;max-width:470px;color:rgba(255,255,255,0.92);">
+                            Your account is ready. Confirm your email address to unlock your dashboard and start learning.
+                        </p>
+                    </div>
+                    <div style="padding:36px;">
+                        <div style="background:#eef6fb;border:1px solid #d5e9f4;border-radius:18px;padding:18px 20px;margin-bottom:24px;">
+                            <div style="font-size:13px;color:#486278;text-transform:uppercase;letter-spacing:0.08em;">Email confirmation</div>
+                            <div style="margin-top:8px;font-size:24px;font-weight:700;color:#102033;">One click and you are in</div>
+                        </div>
+                        <p style="margin:0 0 16px;font-size:15px;line-height:1.8;color:#31475f;">
+                            Thanks for joining TechSpace Hub. Use the button below to verify your email address.
+                        </p>
+                        <div style="padding:10px 0 24px;">
+                            <a href="{verify_link}" style="display:inline-block;background:#0f6c8b;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 26px;border-radius:999px;">
+                                Verify Email Address
+                            </a>
+                        </div>
+                        <div style="background:#fff6e7;border:1px solid #f1dfb2;border-radius:16px;padding:16px 18px;margin-bottom:22px;">
+                            <div style="font-size:14px;font-weight:700;color:#7a5a00;margin-bottom:6px;">Important</div>
+                            <div style="font-size:14px;line-height:1.7;color:#6f5a1b;">
+                                This verification link expires in 24 hours.
+                            </div>
+                        </div>
+                        <p style="margin:0;font-size:14px;line-height:1.8;color:#55697f;">
+                            If you did not create this account, you can safely ignore this email.
+                        </p>
+                    </div>
+                    <div style="padding:20px 36px 28px;border-top:1px solid #e7edf4;font-size:12px;line-height:1.8;color:#708399;">
+                        <div>TechSpace Hub</div>
+                        <div>techspacehub.co.ke</div>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        plain_message = """Verify your TechSpace Hub email address.
+
+Open the verification button in the email to activate your account.
+
+This verification link expires in 24 hours.
+
+If you did not create this account, you can safely ignore this email.
+
+TechSpace Hub
+techspacehub.co.ke
+"""
+
+        _send_email(subject, plain_message, html_message, [user_email])
+
+        logger.info("send_verification_email success email=%s", user_email)
+        return True
+
+        subject = "Verify Your TechSpace Hub Account"
 
         # HTML email content
         html_message = f"""
@@ -186,6 +254,74 @@ def send_password_reset_email(user_email, uid, token):
             getattr(settings, "EMAIL_TIMEOUT", None),
         )
         reset_link = f"{settings.FRONTEND_URL}/password-reset-confirm/{uid}/{token}/"
+
+        subject = "Reset Your TechSpace Hub Password"
+        html_message = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Reset Your Password</title>
+        </head>
+        <body style="margin:0;padding:0;background:#f4f7fb;font-family:Segoe UI,Arial,sans-serif;color:#102033;">
+            <div style="padding:32px 16px;">
+                <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #ecdce7;border-radius:24px;overflow:hidden;box-shadow:0 18px 50px rgba(16,32,51,0.08);">
+                    <div style="padding:32px 36px;background:linear-gradient(135deg,#6a1b4d 0%,#b83280 55%,#ffd1e8 100%);color:#ffffff;">
+                        <div style="font-size:12px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.86;">TechSpace Hub</div>
+                        <h1 style="margin:14px 0 10px;font-size:32px;line-height:1.15;">Reset your password</h1>
+                        <p style="margin:0;font-size:15px;line-height:1.7;max-width:470px;color:rgba(255,255,255,0.92);">
+                            We received a request to reset the password for your account.
+                        </p>
+                    </div>
+                    <div style="padding:36px;">
+                        <div style="background:#fff1f7;border:1px solid #f5d3e4;border-radius:18px;padding:18px 20px;margin-bottom:24px;">
+                            <div style="font-size:13px;color:#8e4d6f;text-transform:uppercase;letter-spacing:0.08em;">Account security</div>
+                            <div style="margin-top:8px;font-size:24px;font-weight:700;color:#102033;">Choose a new password securely</div>
+                        </div>
+                        <p style="margin:0 0 16px;font-size:15px;line-height:1.8;color:#31475f;">
+                            Use the button below to continue with your password reset request.
+                        </p>
+                        <div style="padding:10px 0 24px;">
+                            <a href="{reset_link}" style="display:inline-block;background:#b83280;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 26px;border-radius:999px;">
+                                Reset Password
+                            </a>
+                        </div>
+                        <div style="background:#fff6e7;border:1px solid #f1dfb2;border-radius:16px;padding:16px 18px;margin-bottom:22px;">
+                            <div style="font-size:14px;font-weight:700;color:#7a5a00;margin-bottom:6px;">Important</div>
+                            <div style="font-size:14px;line-height:1.7;color:#6f5a1b;">
+                                This password reset link expires in 1 hour.
+                            </div>
+                        </div>
+                        <p style="margin:0;font-size:14px;line-height:1.8;color:#55697f;">
+                            If you did not request this change, you can ignore this email and your current password will remain unchanged.
+                        </p>
+                    </div>
+                    <div style="padding:20px 36px 28px;border-top:1px solid #f0e6ed;font-size:12px;line-height:1.8;color:#708399;">
+                        <div>TechSpace Hub</div>
+                        <div>techspacehub.co.ke</div>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        plain_message = """Reset your TechSpace Hub password.
+
+Open the reset button in the email to continue.
+
+This password reset link expires in 1 hour.
+
+If you did not request this change, you can ignore this email and your current password will remain unchanged.
+
+TechSpace Hub
+techspacehub.co.ke
+"""
+
+        _send_email(subject, plain_message, html_message, [user_email])
+
+        logger.info("Password reset email sent successfully to %s", user_email)
+        return True
 
         subject = "Reset Your TechSpace Hub Password"
 
