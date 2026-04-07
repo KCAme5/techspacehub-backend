@@ -11,6 +11,15 @@ def send_verification_email(user_email, uid, token):
     Send account verification email
     """
     try:
+        logger.info(
+            "send_verification_email start email=%s host=%s port=%s backend=%s from=%s timeout=%s",
+            user_email,
+            settings.EMAIL_HOST,
+            settings.EMAIL_PORT,
+            settings.EMAIL_BACKEND,
+            settings.DEFAULT_FROM_EMAIL,
+            getattr(settings, "EMAIL_TIMEOUT", None),
+        )
         verify_link = f"{settings.FRONTEND_URL}/verify-email/{uid}/{token}/"
 
         subject = "Verify Your TechSpace Hub Account"
@@ -88,11 +97,11 @@ def send_verification_email(user_email, uid, token):
             fail_silently=False,
         )
 
-        logger.info(f"Verification email sent successfully to {user_email}")
+        logger.info("send_verification_email success email=%s", user_email)
         return True
 
     except Exception as e:
-        logger.error(f"Failed to send verification email to {user_email}: {str(e)}")
+        logger.error(f"Failed to send verification email to {user_email}: {str(e)}", exc_info=True)
         return False
 
 
@@ -101,6 +110,15 @@ def send_password_reset_email(user_email, uid, token):
     Send password reset email
     """
     try:
+        logger.info(
+            "send_password_reset_email start email=%s host=%s port=%s backend=%s from=%s timeout=%s",
+            user_email,
+            settings.EMAIL_HOST,
+            settings.EMAIL_PORT,
+            settings.EMAIL_BACKEND,
+            settings.DEFAULT_FROM_EMAIL,
+            getattr(settings, "EMAIL_TIMEOUT", None),
+        )
         reset_link = f"{settings.FRONTEND_URL}/password-reset-confirm/{uid}/{token}/"
 
         subject = "Reset Your TechSpace Hub Password"

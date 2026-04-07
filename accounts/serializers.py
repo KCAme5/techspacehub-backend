@@ -33,7 +33,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         value = value.strip().lower()
         validate_email(value)
         if User.objects.filter(email=value).exists():
+            logger.warning("RegisterSerializer.validate_email duplicate email=%s", value)
             raise serializers.ValidationError("User with this email already exists. Please log in or use a different email.")
+        logger.info("RegisterSerializer.validate_email accepted email=%s", value)
         return value
 
     def create(self, validated_data):
@@ -41,6 +43,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         password = validated_data.pop("password")
         referral_code = validated_data.pop("referral_code", None)
         email = validated_data.get("email")
+        logger.info(
+            "RegisterSerializer.create starting email=%s referral_code_present=%s role=%s",
+            email,
+            bool(referral_code),
+            validated_data.get("role", "student"),
+        )
 
         # sanitize username: slugify and ensure uniqueness
         base_username = (
@@ -61,6 +69,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         user.my_referral_code = str(uuid.uuid4())[:8]
 
         user.save()
+        logger.info("RegisterSerializer.create user persisted id=%s username=%s email=%s", user.pk, user.username, user.email)
 
         if referral_code:
             try:
@@ -76,15 +85,22 @@ class RegisterSerializer(serializers.ModelSerializer):
                     commission_earned=0.00,
                     commission_paid=False,
                 )
+                logger.info("RegisterSerializer.create referral linked user_id=%s referrer_id=%s", user.pk, referrer.pk)
 
             except User.DoesNotExist:
-                pass
+                logger.warning("RegisterSerializer.create referral code not found code=%s user_email=%s", referral_code, email)
 
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
+        logger.info(
+            "RegisterSerializer.create generated verification payload user_id=%s uid=%s token_prefix=%s",
+            user.pk,
+            uid,
+            token[:12],
+        )
 
         dispatch_verification_email(user.email, uid, token)
-        logger.info(f"Triggered verification email dispatch for {user.email}")
+        logger.info("RegisterSerializer.create triggered verification dispatch email=%s", user.email)
 
         return user
 
@@ -123,11 +139,13 @@ class PasswordResetRequestSerializer(serializers.Serializer):
     def save(self, **kwargs):
         email = self.validated_data["email"].strip().lower()
         user = User.objects.filter(email=email).first()
+        logger.info("PasswordResetRequestSerializer.save requested email=%s exists=%s", email, bool(user))
         if user:
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
 
             dispatch_password_reset_email(user.email, uid, token)
+            logger.info("PasswordResetRequestSerializer.save dispatched email=%s uid=%s", user.email, uid)
 
         return {
             "message": "If an account with this email exists, you will receive a reset link."

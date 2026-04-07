@@ -133,11 +133,19 @@ class RegisterView(generics.CreateAPIView):
     throttle_classes = [ScopedRateThrottle]
 
     def create(self, request, *args, **kwargs):
+        logger.info(
+            "RegisterView.create started email=%s ip=%s user_agent=%s",
+            request.data.get("email"),
+            request.META.get("HTTP_X_FORWARDED_FOR", request.META.get("REMOTE_ADDR")),
+            request.META.get("HTTP_USER_AGENT", "")[:200],
+        )
         serializer = self.get_serializer(
             data=request.data, context={"frontend_url": settings.FRONTEND_URL}
         )
         serializer.is_valid(raise_exception=True)
+        logger.info("RegisterView.create serializer valid email=%s", serializer.validated_data.get("email"))
         user = serializer.save()
+        logger.info("RegisterView.create user saved id=%s email=%s active=%s", user.pk, user.email, user.is_active)
 
         # Log registration
         log_authentication(
