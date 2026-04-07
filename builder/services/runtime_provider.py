@@ -26,7 +26,7 @@ class WebContainerRuntimeProvider(BaseRuntimeProvider):
         output_type = session.output_type
 
         if output_type == "react":
-            install_command = ["npm", "install", "--no-fund", "--no-audit", "--progress=false"]
+            install_command = ["npm", "install", "--no-fund", "--no-audit", "--progress=false", "--legacy-peer-deps", "--loglevel=error"]
             dev_command = ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "4173"]
             preview = {
                 "port": 4173,
