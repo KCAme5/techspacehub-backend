@@ -2,8 +2,79 @@ import logging
 from django.core.mail import send_mail
 from django.conf import settings
 from django.template.loader import render_to_string
+import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _send_email(subject, plain_message, html_message, recipient_list):
+    transport = getattr(settings, "EMAIL_TRANSPORT", "smtp").lower()
+
+    if transport == "brevo_api":
+        return _send_email_via_brevo_api(
+            subject=subject,
+            plain_message=plain_message,
+            html_message=html_message,
+            recipient_list=recipient_list,
+        )
+
+    logger.info(
+        "_send_email using smtp transport recipients=%s host=%s port=%s backend=%s timeout=%s",
+        recipient_list,
+        settings.EMAIL_HOST,
+        settings.EMAIL_PORT,
+        settings.EMAIL_BACKEND,
+        getattr(settings, "EMAIL_TIMEOUT", None),
+    )
+    send_mail(
+        subject=subject,
+        message=plain_message,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=recipient_list,
+        html_message=html_message,
+        fail_silently=False,
+    )
+    return True
+
+
+def _send_email_via_brevo_api(subject, plain_message, html_message, recipient_list):
+    api_key = getattr(settings, "BREVO_API_KEY", None)
+    if not api_key:
+        raise RuntimeError("BREVO_API_KEY is required when EMAIL_TRANSPORT=brevo_api")
+
+    sender_email = settings.DEFAULT_FROM_EMAIL
+    sender_name = getattr(settings, "SITE_NAME", "TechSpace")
+    payload = {
+        "sender": {
+            "name": sender_name,
+            "email": sender_email,
+        },
+        "to": [{"email": email} for email in recipient_list],
+        "subject": subject,
+        "textContent": plain_message,
+        "htmlContent": html_message,
+    }
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json",
+    }
+
+    logger.info(
+        "_send_email using brevo_api transport recipients=%s url=%s timeout=%s",
+        recipient_list,
+        settings.BREVO_API_URL,
+        getattr(settings, "EMAIL_TIMEOUT", None),
+    )
+    response = requests.post(
+        settings.BREVO_API_URL,
+        json=payload,
+        headers=headers,
+        timeout=getattr(settings, "EMAIL_TIMEOUT", 10),
+    )
+    response.raise_for_status()
+    logger.info("_send_email brevo_api response status=%s body=%s", response.status_code, response.text[:300])
+    return True
 
 
 def send_verification_email(user_email, uid, token):
@@ -12,8 +83,9 @@ def send_verification_email(user_email, uid, token):
     """
     try:
         logger.info(
-            "send_verification_email start email=%s host=%s port=%s backend=%s from=%s timeout=%s",
+            "send_verification_email start email=%s transport=%s host=%s port=%s backend=%s from=%s timeout=%s",
             user_email,
+            getattr(settings, "EMAIL_TRANSPORT", "smtp"),
             settings.EMAIL_HOST,
             settings.EMAIL_PORT,
             settings.EMAIL_BACKEND,
@@ -88,14 +160,7 @@ def send_verification_email(user_email, uid, token):
         techspacehub.co.ke
         """
 
-        send_mail(
-            subject=subject,
-            message=plain_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user_email],
-            html_message=html_message,
-            fail_silently=False,
-        )
+        _send_email(subject, plain_message, html_message, [user_email])
 
         logger.info("send_verification_email success email=%s", user_email)
         return True
@@ -111,8 +176,9 @@ def send_password_reset_email(user_email, uid, token):
     """
     try:
         logger.info(
-            "send_password_reset_email start email=%s host=%s port=%s backend=%s from=%s timeout=%s",
+            "send_password_reset_email start email=%s transport=%s host=%s port=%s backend=%s from=%s timeout=%s",
             user_email,
+            getattr(settings, "EMAIL_TRANSPORT", "smtp"),
             settings.EMAIL_HOST,
             settings.EMAIL_PORT,
             settings.EMAIL_BACKEND,

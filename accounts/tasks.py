@@ -103,12 +103,19 @@ def _dispatch_email_in_background(task_func, fallback_func, *args):
                 )
 
         try:
-            fallback_func(*args)
-            logger.info(
-                "Background email dispatch direct send succeeded task=%s target=%s",
-                getattr(task_func, "name", repr(task_func)),
-                args[0] if args else None,
-            )
+            sent = fallback_func(*args)
+            if sent:
+                logger.info(
+                    "Background email dispatch direct send succeeded task=%s target=%s",
+                    getattr(task_func, "name", repr(task_func)),
+                    args[0] if args else None,
+                )
+            else:
+                logger.error(
+                    "Background email dispatch direct send reported failure task=%s target=%s",
+                    getattr(task_func, "name", repr(task_func)),
+                    args[0] if args else None,
+                )
         except Exception:
             logger.exception(
                 "Background email dispatch direct send failed task=%s target=%s",

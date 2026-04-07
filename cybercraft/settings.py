@@ -70,6 +70,9 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@techspacehub.co.ke")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
 EMAIL_DISPATCH_MODE = os.getenv("EMAIL_DISPATCH_MODE", "thread").lower()
+EMAIL_TRANSPORT = os.getenv("EMAIL_TRANSPORT", "smtp").lower()
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_API_URL = os.getenv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
 
 # Application definition
 INSTALLED_APPS = [
