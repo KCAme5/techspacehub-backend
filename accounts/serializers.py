@@ -11,8 +11,7 @@ from django.utils.text import slugify
 from django.utils import timezone
 from .models import Wallet, WalletTransaction, WithdrawalRequest, Referral
 from django.conf import settings
-from .email_utils import send_verification_email, send_password_reset_email
-from .tasks import send_verification_email_task, send_password_reset_email_task
+from .tasks import dispatch_password_reset_email, dispatch_verification_email
 
 import logging
 
@@ -84,15 +83,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         token = default_token_generator.make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-        # Send verification email asynchronously via Celery (non-blocking)
-        try:
-            send_verification_email_task.delay(user.email, uid, token)
-            logger.info(f"Queued verification email task for {user.email}")
-        except Exception as e:
-            logger.error(
-                f"Failed to queue verification email task for {user.email}: {str(e)}"
-            )
-            # Don't fail registration if task queuing fails
+        dispatch_verification_email(user.email, uid, token)
+        logger.info(f"Triggered verification email dispatch for {user.email}")
 
         return user
 
@@ -135,7 +127,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             token = default_token_generator.make_token(user)
             uid = urlsafe_base64_encode(force_bytes(user.pk))
 
-            send_password_reset_email(user.email, uid, token)
+            dispatch_password_reset_email(user.email, uid, token)
 
         return {
             "message": "If an account with this email exists, you will receive a reset link."

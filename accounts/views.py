@@ -27,7 +27,6 @@ from rest_framework.throttling import ScopedRateThrottle
 from .models import LoginAttempt, Wallet, Referral, WalletTransaction, WithdrawalRequest
 from django.utils import timezone
 from datetime import timedelta
-from .utils import send_verification_email
 from decimal import Decimal
 import logging
 from django.db.models import Sum
@@ -36,7 +35,7 @@ from urllib.parse import urlencode
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponse
 from django.contrib.auth import login
-from .email_utils import send_verification_email
+from .tasks import dispatch_verification_email
 from .activity_log import log_activity, log_authentication, log_financial
 
 
@@ -341,14 +340,8 @@ class ResendVerificationView(APIView):
 
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            email_sent = send_verification_email(user.email, uid, token)
-
-            if email_sent:
-                return Response({"detail": "Verification email resent."}, status=200)
-            else:
-                return Response(
-                    {"detail": "Failed to send verification email."}, status=500
-                )
+            dispatch_verification_email(user.email, uid, token)
+            return Response({"detail": "Verification email resent."}, status=200)
         except User.DoesNotExist:
             return Response({"detail": "No user found with this email."}, status=404)
 
