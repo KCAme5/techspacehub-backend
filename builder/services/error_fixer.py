@@ -39,8 +39,8 @@ Respond with ONLY valid JSON, no markdown or extra text:
 
     def __init__(self):
         self.api_key = os.getenv("OPENROUTER_API_KEY")
-        self.api_base = "https://openrouter.io/api/v1"
-        self.model = "anthropic/claude-3.5-sonnet"
+        self.api_base = "https://openrouter.ai/api/v1"
+        self.model = os.getenv("ERROR_FIXER_MODEL", "stepfun/step-3.5-flash")
 
     def get_ai_fix(self, error_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -182,7 +182,12 @@ Respond with ONLY valid JSON, no markdown or extra text:
             )
 
             if response.status_code != 200:
-                logger.error(f"OpenRouter API error: {response.status_code}")
+                logger.error(
+                    "OpenRouter API error: %s — %s (model=%s)",
+                    response.status_code,
+                    response.text[:500],
+                    self.model,
+                )
                 return None
 
             response_data = response.json()
