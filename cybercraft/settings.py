@@ -69,6 +69,7 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@techspacehub.co.ke")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@techspacehub.co.ke")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "10"))
+EMAIL_DISPATCH_MODE = os.getenv("EMAIL_DISPATCH_MODE", "thread").lower()
 
 # Application definition
 INSTALLED_APPS = [

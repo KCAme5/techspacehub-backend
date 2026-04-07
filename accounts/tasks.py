@@ -6,6 +6,7 @@ import logging
 from threading import Thread
 
 from celery import shared_task
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -70,42 +71,50 @@ def send_password_reset_email_task(self, user_email, uid, token):
 
 def _dispatch_email_in_background(task_func, fallback_func, *args):
     """
-    Queue email work without blocking the request thread.
-    If Celery broker publishing fails, fall back to a direct SMTP send
-    in the same background thread.
+    Dispatch email work without blocking the request thread.
+    Default mode is a direct SMTP send on a background thread because it
+    works even when no Celery worker is running. Celery mode can still be
+    enabled explicitly through settings.
     """
+    dispatch_mode = getattr(settings, "EMAIL_DISPATCH_MODE", "thread").lower()
+
     def runner():
         logger.info(
-            "Background email dispatch starting task=%s target=%s",
+            "Background email dispatch starting mode=%s task=%s target=%s",
+            dispatch_mode,
             getattr(task_func, "name", repr(task_func)),
             args[0] if args else None,
         )
+
+        if dispatch_mode == "celery":
+            try:
+                task_func.delay(*args)
+                logger.info(
+                    "Background email dispatch queued task=%s target=%s",
+                    getattr(task_func, "name", repr(task_func)),
+                    args[0] if args else None,
+                )
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Failed to queue email task %s; falling back to direct send. Error: %s",
+                    getattr(task_func, "name", repr(task_func)),
+                    exc,
+                )
+
         try:
-            task_func.delay(*args)
+            fallback_func(*args)
             logger.info(
-                "Background email dispatch queued task=%s target=%s",
+                "Background email dispatch direct send succeeded task=%s target=%s",
                 getattr(task_func, "name", repr(task_func)),
                 args[0] if args else None,
             )
-        except Exception as exc:
-            logger.warning(
-                "Failed to queue email task %s; falling back to direct send. Error: %s",
+        except Exception:
+            logger.exception(
+                "Background email dispatch direct send failed task=%s target=%s",
                 getattr(task_func, "name", repr(task_func)),
-                exc,
+                args[0] if args else None,
             )
-            try:
-                fallback_func(*args)
-                logger.info(
-                    "Background email dispatch fallback send succeeded task=%s target=%s",
-                    getattr(task_func, "name", repr(task_func)),
-                    args[0] if args else None,
-                )
-            except Exception:
-                logger.exception(
-                    "Background email dispatch fallback send failed task=%s target=%s",
-                    getattr(task_func, "name", repr(task_func)),
-                    args[0] if args else None,
-                )
 
     Thread(target=runner, daemon=True).start()
 

@@ -339,6 +339,8 @@ class ProfileView(APIView):
 
 
 class ResendVerificationView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         email = request.data.get("email")
         try:
