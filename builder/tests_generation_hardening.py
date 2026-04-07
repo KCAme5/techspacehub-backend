@@ -46,6 +46,7 @@ class GenerationHardeningTestCase(TestCase):
         self.assertNotIn("left-pad", package_json["dependencies"])
         self.assertEqual(package_json["scripts"]["build"], "vite build")
         self.assertIn("@vitejs/plugin-react", package_json["devDependencies"])
+        self.assertIn("Cross-Origin-Opener-Policy", file_map["vite.config.js"])
 
     def test_react_main_entry_is_normalized_to_jsx(self):
         files = [
@@ -60,6 +61,33 @@ class GenerationHardeningTestCase(TestCase):
         self.assertIn("src/App.jsx", file_names)
         self.assertNotIn("src/main.js", file_names)
         self.assertNotIn("src/App.js", file_names)
+
+    def test_invalid_public_svg_summary_is_dropped(self):
+        files = [
+            {
+                "name": "public/vite.svg",
+                "content": "Complete production-ready portfolio React app built with Vite.",
+            },
+            {
+                "name": "src/App.jsx",
+                "content": "export default function App(){return <main>Hello</main>}",
+            },
+        ]
+
+        result = self.generator.ensure_essential_files(files, output_type="react")
+        file_names = {file_data["name"] for file_data in result}
+
+        self.assertNotIn("public/vite.svg", file_names)
+        self.assertIn("src/App.jsx", file_names)
+
+    def test_extract_description_falls_back_to_plain_summary(self):
+        summary = (
+            "Complete production-ready portfolio React app built with Vite, Tailwind CSS, "
+            "Framer Motion, and Lucide React.\n\n- Responsive navigation\n- Animated hero"
+        )
+
+        extracted = self.generator.extract_description(summary)
+        self.assertIn("portfolio React app", extracted)
 
 
 class AutoFixGuardrailTestCase(TestCase):

@@ -33,7 +33,7 @@ class SessionLifecycleTestCase(TestCase):
             [
                 'data: {"status":"Initializing agent orchestrator..."}\n\n',
                 'data: {"progress":"Connected"}\n\n',
-                'data: {"complete": true, "files": [{"name":"src/App.jsx","content":"export default function App(){return <div>Done</div>}"}], "summary":"Build complete", "explanation":"Created the requested site.", "preview_url":"https://preview.local/session"}\n\n',
+                'data: {"complete": true, "files": [{"name":"index.html","content":"<!doctype html><html><head><title>Modern Market Fresh Fruit</title></head><body><div id=\\"root\\"></div></body></html>"},{"name":"src/App.jsx","content":"export default function App(){return <div>Done</div>}"}], "summary":"Build complete", "explanation":"Created the requested site.", "preview_url":"https://preview.local/session"}\n\n',
             ]
         )
 
@@ -58,8 +58,9 @@ class SessionLifecycleTestCase(TestCase):
         self.assertEqual(session.build_attempts, 1)
         self.assertEqual(session.preview_url, "https://preview.local/session")
         self.assertEqual(session.last_error, "")
-        self.assertEqual(len(session.files), 1)
+        self.assertEqual(len(session.files), 2)
         self.assertIn("Created the requested site.", session.explanation)
+        self.assertEqual(session.project_name, "Modern Market Fresh Fruit")
         self.assertTrue(any("Connected" in entry for entry in session.build_logs))
 
     @patch("builder.services.agent_orchestrator.AgentOrchestrator.stream_build")

@@ -228,11 +228,12 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             # Finalize
             yield self._sse({"progress": "Processing files..."})
 
-            final_text = "".join(full_response)
+            raw_final_text = "".join(full_response)
+            explanation = self.extract_description(raw_text=raw_final_text)
             final_text = re.sub(
                 r"<(/?)(think|thought|tool_call|description)>",
                 "",
-                final_text,
+                raw_final_text,
                 flags=re.IGNORECASE,
             )
 
@@ -256,6 +257,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                     
                     yield self._sse({"files": files})
                     final_text = thinking_text
+                    explanation = explanation or self.extract_description(raw_text=thinking_text)
 
             if not files:
                 yield self._sse({"error": "No valid files generated"})
@@ -269,11 +271,10 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
             yield self._sse({"progress": f"Complete — {len(files)} file(s) ready"})
 
-            if not suppress_done:
-                explanation = self.extract_description(raw_text=final_text)
-                if explanation:
-                    yield self._sse({"explanation": explanation})
+            if explanation:
+                yield self._sse({"explanation": explanation})
 
+            if not suppress_done:
                 yield self._sse({"done": True, "files": files})
             else:
                 yield self._sse({"files": files})

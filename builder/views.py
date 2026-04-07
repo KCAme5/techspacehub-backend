@@ -59,6 +59,91 @@ def resolve_builder_model(selected_model):
     return BUILDER_MODEL_MAP.get(key, BUILDER_MODEL_MAP[DEFAULT_BUILDER_MODEL])
 
 
+def derive_project_name(prompt):
+    text = (prompt or "").strip()
+    if not text:
+        return "Untitled Project"
+
+    patterns = [
+        (r"([\w\s]+?)\s+portfolio", "{} Portfolio"),
+        (r"([\w\s]+?)\s+(?:agency|company|business|firm|studio)", "{} Agency"),
+        (r"([\w\s]+?)\s+(?:restaurant|cafe|coffee|bakery|bistro)", "{} Restaurant"),
+        (r"([\w\s]+?)\s+landing\s+page", "{} Landing Page"),
+        (r"([\w\s]+?)\s+(?:saas|app|platform|tool|service)", "{} App"),
+        (r"(?:website|site|page|app)\s+(?:for|about)\s+([\w\s]+)", "{} Site"),
+    ]
+    for pattern, template in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            name = re.sub(r"\s+", " ", match.group(1)).strip().title()
+            if len(name) > 2:
+                return template.format(name)[:100]
+
+    words = [word for word in re.findall(r"[a-zA-Z0-9]+", text) if len(word) > 2][:4]
+    if not words:
+        return "Untitled Project"
+    return (" ".join(word.title() for word in words) + " Site")[:100]
+
+
+def _clean_project_title(value):
+    candidate = re.sub(r"\s+", " ", (value or "")).strip()
+    if not candidate:
+        return ""
+    invalid_titles = {
+        "TechSpace AI Builder",
+        "TechSpace Builder",
+        "Vite App",
+        "React App",
+        "Untitled Project",
+    }
+    if candidate in invalid_titles:
+        return ""
+    return candidate[:100]
+
+
+def derive_project_name_from_files(files, fallback_name="Untitled Project"):
+    normalized_files = files or []
+
+    def get_file_content(path):
+        for file_data in normalized_files:
+            if file_data.get("name", "").lower() == path.lower():
+                return file_data.get("content", "")
+        return ""
+
+    index_html = get_file_content("index.html")
+    if index_html:
+        title_match = re.search(r"<title>\s*(.*?)\s*</title>", index_html, flags=re.IGNORECASE | re.DOTALL)
+        title = _clean_project_title(title_match.group(1) if title_match else "")
+        if title:
+            return title
+
+    for entry in ("src/App.jsx", "src/app.jsx", "src/main.jsx"):
+        source = get_file_content(entry)
+        if not source:
+            continue
+        heading_match = re.search(
+            r"<h1[^>]*>\s*([^<{][^<]{2,80}?)\s*</h1>",
+            source,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        heading = _clean_project_title(heading_match.group(1) if heading_match else "")
+        if heading:
+            return heading
+
+    package_json = get_file_content("package.json")
+    if package_json:
+        try:
+            package_data = json.loads(package_json)
+            package_name = package_data.get("name", "").replace("-", " ").title()
+            package_title = _clean_project_title(package_name)
+            if package_title:
+                return package_title
+        except Exception:
+            pass
+
+    return fallback_name[:100]
+
+
 def restore_generation_credit(user):
     """Refund one builder credit after a failed generation/edit attempt."""
     try:
@@ -153,7 +238,9 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
     completion_persisted = False
 
     def persist_completed_state():
+        project_name = derive_project_name_from_files(last_files, fallback_name=session.project_name or "Untitled Project")
         session.files = last_files
+        session.project_name = project_name
         session.explanation = explanation
         session.preview_url = preview_url
         session.last_error = ""
@@ -167,6 +254,7 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
         session.save(
             update_fields=[
                 "files",
+                "project_name",
                 "explanation",
                 "raw_response",
                 "status",
@@ -942,6 +1030,7 @@ class GenerateView(APIView):
         # Create session
         session = GenerationSession.objects.create(
             user=request.user,
+            project_name=derive_project_name(prompt),
             prompt=prompt,
             output_type=output_type,
             style_preset=style_preset,

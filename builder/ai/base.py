@@ -21,6 +21,13 @@ class BaseWebsiteGenerator:
         "tailwindcss": "^3.4.14",
         "vite": "^5.4.11",
     }
+    SUPPORTED_REACT_ROOT_FILES = {
+        "package.json",
+        "vite.config.js",
+        "tailwind.config.js",
+        "postcss.config.js",
+        "index.html",
+    }
 
     def _build_system_prompt(self, output_type="react"):
         common_protocol = """
@@ -175,8 +182,7 @@ STRICT PROTOCOL:
                 content = re.sub(r"^```[\w]*\n?", "", content, flags=re.MULTILINE)
                 content = re.sub(r"\n?```\s*$", "", content)
                 
-                # Strip leading/trailing notes if any
-                content = content.split("---")[0].split("###")[0].strip()
+                content = BaseWebsiteGenerator._strip_trailing_meta_text(filename, content)
 
                 if filename and content:
                     files.append({"name": filename, "content": content})
@@ -212,13 +218,12 @@ STRICT PROTOCOL:
             file_map = {f["name"].lower(): f for f in files}
 
             # 2. vite.config.js
-            if "vite.config.js" not in file_map:
-                logger.info("Injecting missing vite.config.js")
-                files.append({
-                    "name": "vite.config.js",
-                    "content": "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\n\nexport default defineConfig({\n  plugins: [react()],\n});"
-                })
-                file_map["vite.config.js"] = {"name": "vite.config.js"}
+            files = self._upsert_file(
+                files,
+                "vite.config.js",
+                self._build_supported_vite_config(),
+            )
+            file_map = {f["name"].lower(): f for f in files}
 
             if "tailwind.config.js" not in file_map:
                 files.append({
@@ -280,12 +285,78 @@ STRICT PROTOCOL:
                     lowered = "src/main.jsx"
                 elif lowered.lower() == "src/app.js":
                     lowered = "src/App.jsx"
+                if not self._is_supported_react_path(lowered, content):
+                    logger.warning("Dropping unsupported generated file: %s", lowered)
+                    continue
             key = lowered.lower()
             if key in seen:
                 continue
             seen.add(key)
             normalized.append({"name": lowered, "content": content})
         return normalized
+
+    @classmethod
+    def _is_supported_react_path(cls, path, content):
+        normalized = path.lower()
+        if normalized in cls.SUPPORTED_REACT_ROOT_FILES:
+            return True
+        if normalized.startswith("src/") and re.search(r"\.(jsx|js|css|html|json|md)$", normalized):
+            return True
+        if normalized.startswith("public/") and normalized.endswith(".svg"):
+            lowered_content = (content or "").lower()
+            return "<svg" in lowered_content and "</svg>" in lowered_content
+        return False
+
+    @staticmethod
+    def _looks_like_summary_text(text):
+        sample = (text or "").strip()
+        if len(sample) < 40:
+            return False
+
+        lowered = sample.lower()
+        summary_markers = [
+            "complete production-ready",
+            "features:",
+            "overview:",
+            "the app follows",
+            "fully responsive design",
+            "all files are syntactically correct",
+            "production-ready",
+        ]
+        bullet_count = len(re.findall(r"(?m)^\s*[-*]\s+", sample))
+        code_token_count = sum(
+            token in sample
+            for token in ["import ", "export ", "function ", "return (", "<div", "{", "}", ";"]
+        )
+
+        return (bullet_count >= 2 or any(marker in lowered for marker in summary_markers)) and code_token_count < 4
+
+    @classmethod
+    def _strip_trailing_meta_text(cls, filename, content):
+        cleaned = (content or "").strip()
+        lowered_filename = (filename or "").lower()
+
+        if lowered_filename.endswith(".svg"):
+            if "<svg" in cleaned.lower() and "</svg>" in cleaned.lower():
+                return cleaned[: cleaned.lower().rfind("</svg>") + len("</svg>")].strip()
+            return ""
+
+        if lowered_filename.endswith(".html") and "</html>" in cleaned.lower():
+            return cleaned[: cleaned.lower().rfind("</html>") + len("</html>")].strip()
+
+        summary_anchor = re.search(
+            r"\n{2,}(?=(complete\b|overview\b|features:\b|the app follows\b|all files are\b))",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
+        if summary_anchor:
+            trailing = cleaned[summary_anchor.start():].strip()
+            if cls._looks_like_summary_text(trailing):
+                cleaned = cleaned[:summary_anchor.start()].rstrip()
+
+        if cleaned.endswith("```"):
+            cleaned = re.sub(r"\n?```\s*$", "", cleaned).rstrip()
+        return cleaned
 
     def _build_supported_package_json(self, existing_content=""):
         package_data = {}
@@ -309,6 +380,31 @@ STRICT PROTOCOL:
         return json.dumps(package_data, indent=2)
 
     @staticmethod
+    def _build_supported_vite_config():
+        return (
+            "import { defineConfig } from 'vite';\n"
+            "import react from '@vitejs/plugin-react';\n\n"
+            "const sharedHeaders = {\n"
+            "  'Cross-Origin-Opener-Policy': 'same-origin',\n"
+            "  'Cross-Origin-Embedder-Policy': 'require-corp',\n"
+            "  'Cross-Origin-Resource-Policy': 'cross-origin',\n"
+            "};\n\n"
+            "export default defineConfig({\n"
+            "  plugins: [react()],\n"
+            "  server: {\n"
+            "    host: '0.0.0.0',\n"
+            "    port: 4173,\n"
+            "    headers: sharedHeaders,\n"
+            "  },\n"
+            "  preview: {\n"
+            "    host: '0.0.0.0',\n"
+            "    port: 4173,\n"
+            "    headers: sharedHeaders,\n"
+            "  },\n"
+            "});"
+        )
+
+    @staticmethod
     def _upsert_file(files, name, content):
         updated = False
         for file_data in files:
@@ -327,4 +423,14 @@ STRICT PROTOCOL:
         match = re.search(
             r"<description>(.*?)</description>", raw_text, re.DOTALL | re.IGNORECASE
         )
-        return match.group(1).strip() if match else ""
+        if match:
+            return match.group(1).strip()
+
+        fallback = re.search(
+            r"(?is)(complete production-ready.*|overview:.*|features:\s*.*|the app follows.*)$",
+            raw_text or "",
+        )
+        if fallback and BaseWebsiteGenerator._looks_like_summary_text(fallback.group(1)):
+            return fallback.group(1).strip()
+
+        return ""
