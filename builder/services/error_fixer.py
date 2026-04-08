@@ -143,7 +143,7 @@ Respond with ONLY valid JSON, no markdown or extra text:
         self, error_message: str, code_snippet: str, file_path: str, language: str
     ) -> Optional[Dict[str, Any]]:
         """
-        Call Claude API via OpenRouter for fix generation.
+        Call AI via OpenRouter for fix generation.
 
         Args:
             error_message: The error text
@@ -171,14 +171,16 @@ Respond with ONLY valid JSON, no markdown or extra text:
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json",
+                    "HTTP-Referer": "https://techspacehub.co.ke",
+                    "X-Title": "TechSpaceHub",
                 },
                 json={
                     "model": self.model,
                     "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.2,  # Low temp for consistency
-                    "max_tokens": 500,
+                    "temperature": 0.2,
+                    "max_tokens": 2000,
                 },
-                timeout=30,
+                timeout=45,
             )
 
             if response.status_code != 200:
@@ -191,21 +193,72 @@ Respond with ONLY valid JSON, no markdown or extra text:
                 return None
 
             response_data = response.json()
-            content = response_data["choices"][0]["message"]["content"]
+            content = (
+                response_data.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+            )
 
-            # Parse JSON from response
-            fix_data = json.loads(content)
+            if not content or not content.strip():
+                logger.error("AI returned empty content (model=%s)", self.model)
+                return None
+
+            fix_data = self._extract_json(content)
+            if fix_data is None:
+                logger.error(
+                    "Could not extract JSON from AI response (model=%s): %.300s",
+                    self.model,
+                    content,
+                )
             return fix_data
 
         except requests.exceptions.RequestException as e:
             logger.error(f"Request failed: {str(e)}")
             return None
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"Failed to parse API response: {str(e)}")
-            return None
         except Exception as e:
-            logger.error(f"Unexpected error in AI classification: {str(e)}")
+            logger.error(f"Unexpected error in AI fix: {str(e)}", exc_info=True)
             return None
+
+    @staticmethod
+    def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+        """
+        Robustly extract a JSON object from AI output that may contain
+        markdown fences, thinking tags, or surrounding prose.
+        """
+        import re
+
+        cleaned = text.strip()
+
+        # 1. Try direct parse first (ideal case)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            pass
+
+        # 2. Strip markdown code fences:  ```json ... ```  or  ``` ... ```
+        fence_match = re.search(
+            r"```(?:json)?\s*\n?(.*?)\n?\s*```", cleaned, re.DOTALL
+        )
+        if fence_match:
+            try:
+                return json.loads(fence_match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+        # 3. Strip <think>...</think> or <thought>...</thought> tags
+        stripped = re.sub(
+            r"<(think|thought)>.*?</\1>", "", cleaned, flags=re.DOTALL | re.IGNORECASE
+        )
+
+        # 4. Find the first { ... } block in the remaining text
+        brace_match = re.search(r"\{.*\}", stripped, re.DOTALL)
+        if brace_match:
+            try:
+                return json.loads(brace_match.group(0))
+            except json.JSONDecodeError:
+                pass
+
+        return None
 
 
 # Singleton instance
