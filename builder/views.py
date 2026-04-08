@@ -35,17 +35,26 @@ logger = logging.getLogger(__name__)
 
 
 BUILDER_MODEL_MAP = {
-    "stepfun": "stepfun/step-3.5-flash",
-    "qwen": "qwen/qwen3-235b-a22b",
+    "stepfun": "stepfun/step-3.5-flash:free",
     "trinity": "arcee-ai/trinity-large-preview:free",
     "gpt-oss": "openai/gpt-oss-120b:free",
     "nemotron": "nvidia/nemotron-3-super-120b-a12b:free",
     "glm": "z-ai/glm-4.5-air:free",
-    "hunter": "openrouter/hunter-alpha",
-    "healer": "openrouter/healer-alpha",
     "minimax": "minimax/minimax-m2.5:free",
 }
-DEFAULT_BUILDER_MODEL = "stepfun"
+
+# Capability-ranked fallback chain for code generation (strongest to weakest)
+# This is used for automatic model selection - users cannot override
+BUILDER_MODEL_FALLBACK_CHAIN = [
+    "openai/gpt-oss-120b:free",                     # 1. Strongest - GPT-4 distilled
+    "nvidia/nemotron-3-super-120b-a12b:free",      # 2. Very strong
+    "z-ai/glm-4.5-air:free",                        # 3. Strong coding capability
+    "arcee-ai/trinity-large-preview:free",          # 4. Good capability
+    "minimax/minimax-m2.5:free",                    # 5. Decent capability
+    "stepfun/step-3.5-flash:free",                  # 6. Fallback (fast but less capable)
+]
+
+DEFAULT_BUILDER_MODEL = "gpt-oss"  # Strongest model is default
 
 
 def route_builder_message(prompt, has_existing_project=False):
@@ -54,9 +63,31 @@ def route_builder_message(prompt, has_existing_project=False):
     return validator.route(prompt, has_existing_project=has_existing_project)
 
 
-def resolve_builder_model(selected_model):
-    key = (selected_model or DEFAULT_BUILDER_MODEL).strip().lower()
-    return BUILDER_MODEL_MAP.get(key, BUILDER_MODEL_MAP[DEFAULT_BUILDER_MODEL])
+def get_builder_model_fallback_chain():
+    """
+    Return the fallback chain for builder model selection.
+    Models are ordered by coding capability (strongest to weakest).
+    Do not use user input to override this chain.
+    """
+    return BUILDER_MODEL_FALLBACK_CHAIN
+
+
+def resolve_builder_model(use_fallback_chain=False):
+    """
+    Resolve the builder model to use.
+    
+    Args:
+        use_fallback_chain: If True, returns the ordered fallback chain for sequential retry.
+                          If False, returns only the primary (strongest) model.
+    
+    Returns:
+        str: Single model name if use_fallback_chain=False
+        list: Ordered list of model names if use_fallback_chain=True
+    """
+    if use_fallback_chain:
+        return get_builder_model_fallback_chain()
+    # Return strongest model only
+    return BUILDER_MODEL_FALLBACK_CHAIN[0]
 
 
 def derive_project_name(prompt):
@@ -984,8 +1015,10 @@ class GenerateView(APIView):
         prompt = request.data.get("prompt", "").strip()
         output_type = request.data.get("output_type", "react")
         style_preset = request.data.get("style_preset", "")
-        selected_model = request.data.get("model", DEFAULT_BUILDER_MODEL)
         existing_files = request.data.get("existing_files", None)
+
+        # Note: Model selection is NO LONGER USER-CONFIGURABLE
+        # System uses capability-ranked fallback chain automatically
 
         # Validation
         if not prompt:
@@ -1041,7 +1074,8 @@ class GenerateView(APIView):
             credits_used=1,
         )
 
-        model_name = resolve_builder_model(selected_model)
+        # Get the primary (strongest) model - no user override
+        model_name = resolve_builder_model(use_fallback_chain=False)
 
         def stream_response():
             """Generator yielding SSE events via AgentOrchestrator."""
@@ -1844,7 +1878,9 @@ class ChatView(APIView):
     def post(self, request, session_id):
         """Continue conversation with context."""
         user_message = request.data.get("message", "").strip()
-        selected_model = request.data.get("model", DEFAULT_BUILDER_MODEL)
+        
+        # Note: Model selection is NO LONGER USER-CONFIGURABLE
+        # System uses capability-ranked fallback chain automatically
         
         if not user_message:
             return Response(
@@ -1921,7 +1957,8 @@ class ChatView(APIView):
         existing_files = session.files
         output_type = session.output_type
         
-        model_name = resolve_builder_model(selected_model)
+        # Get the primary (strongest) model - no user override
+        model_name = resolve_builder_model(use_fallback_chain=False)
 
         def stream_response():
             try:

@@ -31,55 +31,107 @@ class BaseWebsiteGenerator:
 
     def _build_system_prompt(self, output_type="react"):
         common_protocol = """
-STRICT PROTOCOL - FOLLOW EXACTLY:
-1. FIRST: Write your reasoning inside <think>...</think> tags ONLY. NO code inside think tags.
-2. AFTER the closing </think> tag, output ALL file code using this EXACT format:
-   --- filename ---
-   [complete file content here]
-   
-3. END with a summary inside <description>...</description> tags.
-4. Use lowercase for all filenames.
-5. NEVER use markdown code blocks (```) around file markers.
-6. NEVER use <tool_call> or nested <think> tags.
-7. NEVER put code inside <think> blocks — code MUST come after </think>.
-8. Ensure ALL code is complete, valid, and production-ready.
+=== STRICT OUTPUT PROTOCOL ===
+OUTPUT FORMAT (FOLLOW EXACTLY, CHARACTER FOR CHARACTER):
+<think>
+[Your reasoning here - NO CODE, ONLY TEXT]
+</think>
+
+--- filename.ext ---
+[COMPLETE FILE CONTENT - CODE ONLY, NO EXPLANATIONS, NO MARKDOWN BLOCKS]
+
+--- filename2.ext ---
+[COMPLETE FILE CONTENT - CODE ONLY]
+
+<description>
+Summary of what was built.
+</description>
+
+MANDATORY RULES:
+1. NO prose, NO explanations, NO "Let me...", NO "I'll...", NO "Here's..." before the first file marker.
+2. ONLY output using --- filename --- format. NOTHING else.
+3. Each file content section must contain ONLY the actual code. ZERO explanatory text inside code sections.
+4. NEVER use markdown code fences (```), NEVER use <tool_call>, NEVER nest <think> tags.
+5. filenames must be lowercase. Use . not - in names (src/app.jsx not src-app-jsx).
+6. ALL code must be complete and syntactically valid. NO "..." ellipsis, NO omitted sections.
+7. Between </think> and the first --- filename ---, output NOTHING. Jump straight to first file marker.
+8. If you start explaining something, STOP. Output ONLY code in the file sections.
 """
         if output_type == "html":
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY HTML websites.
+
 {common_protocol}
 
-CRITICAL RULES:
-1. OUTPUT: Three files only - index.html, style.css, script.js
-2. IMAGES: Use Unsplash IDs: photo-1485827404703-89b55fcc595e, photo-1461749280684-dccba630e2f6
-3. TAILWIND: Load via CDN: <script src="https://cdn.tailwindcss.com"></script>
-4. NO EXTERNAL DEPENDENCIES - everything in the 3 files
-5. VALIDATE all HTML tags are closed, all CSS braces match
+STACK: HTML + CSS + JavaScript only
+FILES: 3 total - index.html, style.css, script.js
+IMAGES: Use Unsplash IDs like photo-1485827404703-89b55fcc595e
+TAILWIND: Load via CDN: <script src="https://cdn.tailwindcss.com"></script>
+NO external packages. Everything in these 3 files.
+
+YOUR TURN: Build the website now. Output ONLY:
+<think>YOUR_PLAN</think>
+--- index.html ---
+CODE_HERE
+--- style.css ---
+CODE_HERE
+--- script.js ---
+CODE_HERE
+<description>Built HTML website</description>
 """
         else:
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY React apps.
+
 {common_protocol}
 
-CRITICAL RULES:
-1. FILE EXTENSIONS: ALL components MUST use .jsx (NOT .js)
-2. REQUIRED FILES: package.json, vite.config.js, tailwind.config.js, postcss.config.js, index.html, src/App.jsx, src/index.css, src/main.jsx
-3. IMAGES: Use Unsplash IDs: photo-1518770660439-4636190af475, photo-1542831371-29b0f74f9713
-4. SUPPORTED STACK: Vite + React only. Do not use Next.js, Remix, CRA, Astro, Vue, Angular, Svelte, TypeScript, or server-side code.
-5. DEPENDENCIES: Only use these packages if needed: react, react-dom, framer-motion, lucide-react. Do not introduce any other npm packages.
-6. STYLING: Use Tailwind CSS classes and src/index.css for tokens/base styles. Do not depend on external UI kits.
-7. VALIDATION: Check ALL JSX tags closed, ALL imports valid, NO incomplete code.
-8. main.jsx MUST use: ReactDOM.createRoot(document.getElementById('root'))
+STACK: Vite + React 18 + Tailwind CSS only
+FILE STRUCTURE (EXACT):
+  - package.json (npm dependencies: react, react-dom, framer-motion, lucide-react only)
+  - vite.config.js
+  - tailwind.config.js
+  - postcss.config.js
+  - index.html
+  - src/main.jsx
+  - src/index.css
+  - src/App.jsx
+  - (optional: src/components/*.jsx)
+
+CRITICAL:
+1. Use .jsx extensions ALWAYS (not .ts, .tsx, .js)
+2. main.jsx MUST: const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<React.StrictMode><App /></React.StrictMode>)
+3. Unsplash IDs: photo-1518770660439-4636190af475, photo-1542831371-29b0f74f9713
+4. NO Next.js, NO TypeScript, NO CRA, NO remix. ONLY Vite + React.
+5. Import from 'lucide-react' for icons. Import from 'framer-motion' for animations.
+6. Tailwind classes from CDN config in vite.config.js.
+
+YOUR TURN: Build the React app now. Output ONLY files with --- filename.jsx --- markers. NO explanations in code sections.
 """
 
     def _build_edit_system_prompt(self):
         return """You are an EXPERT Frontend Engineer editing existing code.
 
-STRICT PROTOCOL:
-1. START with <think>...</think> tags describing your changes.
-2. Return ONLY files that need changes using: --- filename ---
-3. Return COMPLETE file content, not just changes.
-4. END with <description>...</description> tags.
-5. NEVER use markdown code blocks around markers.
-6. Preserve all working code exactly.
+=== STRICT OUTPUT PROTOCOL FOR EDITS ===
+<think>
+List exactly what you will change:
+- File X: change A to B
+- File Y: add feature Z
+</think>
+
+--- filename.jsx ---
+[COMPLETE UPDATED FILE - ONLY CODE, NO EXPLANATIONS]
+
+--- filename2.jsx ---
+[COMPLETE UPDATED FILE - ONLY CODE]
+
+<description>
+Summary of changes.
+</description>
+
+MANDATORY:
+1. Return COMPLETE files (not diffs). Include ALL code even unchanged parts.
+2. Output ONLY --- filename --- sections. ZERO explanatory text between files.
+3. Preserve all working code exactly. Only change what was requested.
+4. Do NOT add new npm dependencies. Only: react, react-dom, framer-motion, lucide-react.
+5. NO markdown blocks, NO preamble, JUMP TO FIRST FILE after </think>.
 """
 
     def _build_user_message(self, prompt, existing_files, output_type, is_edit):
@@ -106,6 +158,7 @@ STRICT PROTOCOL:
     def parse_multi_file_output(raw_text):
         """
         Parse AI output for file markers: --- filename --- or ### filename ###
+        Aggressively strips explanatory text and preamble.
         Returns: [{"name": str, "content": str}]
         """
         if not raw_text or not isinstance(raw_text, str):
@@ -132,7 +185,7 @@ STRICT PROTOCOL:
         except Exception:
             pass
 
-        # 2. Clean text - remove thinking/description tags
+        # 2. Remove thinking/description tags
         clean_text = raw_text
         clean_text = re.sub(
             r"<(think|thought|tool_call|description)>.*?</\1>",
@@ -147,27 +200,34 @@ STRICT PROTOCOL:
             flags=re.DOTALL | re.IGNORECASE,
         )
 
-        # 3. Handle models that use Markdown headers instead of dashes
-        # e.g. ### src/App.jsx
-        # Use a regex that finds --- filename --- or ### filename ### or **filename**
+        # 3. Marker patterns (support multiple formats)
         marker_pattern = (
-            r"(?:\n|^)(?:[-=#*]{2,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#*]{2,})"
+            r"(?:\n|^)[-=#*]{2,}\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})\s*(?:[-=#*]{2,})?"
         )
         
-        # 4. Fallback for models that use markdown code blocks WITH filename as first line or comment
-        # e.g. ```jsx\n// src/App.jsx\n...```
+        # 4. If no standard markers found, try markdown code block fallback
         if not re.search(marker_pattern, clean_text):
-            # Try to find ```blocks with potential filenames inside
             code_blocks = re.findall(r"```[\w]*\n(.*?)\n```", clean_text, re.DOTALL)
             for block in code_blocks:
-                # Look for filename in first few lines as a comment
                 name_match = re.search(r"(?://|#|/\*)\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})", block[:100])
                 if name_match:
                     files.append({"name": name_match.group(1).lower(), "content": block.strip()})
             
-            if files: return files
+            if files: 
+                return files
 
-        # 5. Standard Marker Parsing
+        # 5. AGGRESSIVE preamble stripping - find first marker
+        first_marker = re.search(marker_pattern, clean_text, flags=re.IGNORECASE)
+        if first_marker:
+            preamble = clean_text[:first_marker.start()]
+            # Only keep preamble if it's clearly not explanatory text
+            if not BaseWebsiteGenerator._looks_like_explanation(preamble):
+                clean_text = preamble + clean_text[first_marker.start():]
+            else:
+                # Aggressively strip all preamble
+                clean_text = clean_text[first_marker.start():]
+
+        # 6. Split on markers and extract files
         parts = re.split(marker_pattern, clean_text, flags=re.IGNORECASE)
 
         if len(parts) > 1:
@@ -175,19 +235,24 @@ STRICT PROTOCOL:
                 filename = parts[i].strip()
                 content = parts[i + 1].strip() if i + 1 < len(parts) else ""
 
-                if any(stop in filename for stop in ["step", "thinking", "thought", "description"]):
+                # Skip invalid filenames
+                if any(stop in filename.lower() for stop in ["step", "thinking", "thought", "description"]):
                     continue
 
-                # Clean markdown fences inside the content
+                # Strip markdown code fences
                 content = re.sub(r"^```[\w]*\n?", "", content, flags=re.MULTILINE)
                 content = re.sub(r"\n?```\s*$", "", content)
                 
+                # AGGRESSIVE: Strip explanatory preamble from inside code sections
+                content = BaseWebsiteGenerator._strip_explanation_from_content(content)
+                
+                # Standard trailing meta cleanup
                 content = BaseWebsiteGenerator._strip_trailing_meta_text(filename, content)
 
-                if filename and content:
+                if filename and content and len(content.strip()) > 10:  # Minimum content length
                     files.append({"name": filename, "content": content})
 
-        # 6. Final Fallback: Single file (usually HTML or React App.jsx)
+        # 7. Final Fallback: Single file
         if not files and clean_text.strip():
             if "<html" in clean_text.lower() or "<!DOCTYPE" in clean_text.upper():
                 files.append({"name": "index.html", "content": clean_text.strip()})
@@ -195,6 +260,65 @@ STRICT PROTOCOL:
                 files.append({"name": "src/App.jsx", "content": clean_text.strip()})
 
         return files
+    
+    @staticmethod
+    def _looks_like_explanation(text):
+        """Detect if text looks like explanatory prose rather than code."""
+        sample = (text or "").strip()
+        if len(sample) < 20:
+            return False
+        
+        lowered = sample.lower()
+        prose_markers = [
+            "i'll ",
+            "let me ",
+            "here's",
+            "here is",
+            "this is",
+            "the following",
+            "below",
+            "as follows",
+            "build a",
+            "build an",
+            "create a",
+            "create an",
+            "i've included",
+            "i've created",
+            "complete production",
+            "description:",
+        ]
+        
+        # High prose marker density = explanation text
+        marker_count = sum(1 for marker in prose_markers if marker in lowered)
+        code_tokens = sum(token in sample for token in ["import ", "export ", "function ", "{", "}", "<", "=>"])
+        
+        return marker_count >= 2 or (marker_count >= 1 and code_tokens < 3)
+    
+    @staticmethod
+    def _strip_explanation_from_content(content):
+        """Remove explanatory text that got mixed into file content."""
+        if not content:
+            return content
+        
+        lines = content.split('\n')
+        
+        # Find the line where actual code likely starts
+        code_start_idx = 0
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            # Skip empty lines and stop at first real code
+            if stripped and not stripped.startswith('//') and not stripped.startswith('#'):
+                # Check if this looks like a code line
+                if any(token in stripped for token in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '{', 'class ', '<', 'import', 'package.json', '{']):
+                    code_start_idx = idx
+                    break
+                # If it looks like prose, keep searching
+                if BaseWebsiteGenerator._looks_like_explanation(stripped):
+                    code_start_idx = idx + 1
+        
+        # Rejoin, skipping leading explanation lines
+        result = '\n'.join(lines[code_start_idx:]).strip() if code_start_idx > 0 else content
+        return result
 
     def ensure_essential_files(self, files, output_type="react"):
         """
