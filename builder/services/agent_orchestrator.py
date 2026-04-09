@@ -6,17 +6,20 @@ from ..ai.stepfun_client import OpenRouterBuilderClient
 
 logger = logging.getLogger(__name__)
 
+
 class AgentOrchestrator:
     # Future: In-memory store for WebContainers or E2B sessions
     active_sessions: Dict[str, Any] = {}
 
     def __init__(self, session_id: str = None):
         self.session_id = session_id or str(uuid.uuid4())
-        
+
     def _sse(self, payload: dict) -> str:
         return f"data: {json.dumps(payload)}\n\n"
 
-    def stream_build(self, prompt: str, model_name: str, existing_files=None, is_chat=False) -> Generator[str, None, None]:
+    def stream_build(
+        self, prompt: str, model_chain: list, existing_files=None, is_chat=False
+    ) -> Generator[str, None, None]:
         """
         Orchestrates AI generation. WebContainer/E2B logic will be added here.
         Yields SSE formatted strings.
@@ -24,23 +27,23 @@ class AgentOrchestrator:
         yield self._sse({"status": "Initializing agent orchestrator..."})
 
         # 1. AI Generation Stream
-        client = OpenRouterBuilderClient(model=model_name)
+        client = OpenRouterBuilderClient(models=model_chain)
         generated_files = []
-        
+
         # We reuse the stream_generation from our openrouter client
         # It yields chunk, thinking, progress events directly.
         for event in client.stream_generation(
-            prompt, 
-            existing_files=existing_files, 
-            output_type="react", 
-            suppress_done=True
+            prompt,
+            existing_files=existing_files,
+            output_type="react",
+            suppress_done=True,
         ):
             if event.startswith("data: "):
                 try:
                     payload = json.loads(event[6:].strip())
                     if "files" in payload:
                         generated_files = payload["files"]
-                    
+
                     # ALWAYS yield the event immediately to the frontend
                     yield event
                 except json.JSONDecodeError:
@@ -55,17 +58,21 @@ class AgentOrchestrator:
 
         # 2. Finalize and Ensure Scaffolding
         yield self._sse({"status": "Finalizing build..."})
-        
-        # Ensure package.json, vite.config.js, etc. exist for React projects
-        generator = OpenRouterBuilderClient(model=model_name)
-        generated_files = generator.ensure_essential_files(generated_files, output_type="react")
 
-        yield self._sse({
-            "complete": True,
-            "summary": "AI Generation complete! Deployment coming soon.",
-            "files": generated_files,
-            "session_id": self.session_id
-        })
+        # Ensure package.json, vite.config.js, etc. exist for React projects
+        generator = OpenRouterBuilderClient(models=model_chain)
+        generated_files = generator.ensure_essential_files(
+            generated_files, output_type="react"
+        )
+
+        yield self._sse(
+            {
+                "complete": True,
+                "summary": "AI Generation complete! Deployment coming soon.",
+                "files": generated_files,
+                "session_id": self.session_id,
+            }
+        )
 
     def cleanup(self):
         """Cleanup session resources."""

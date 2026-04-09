@@ -14,34 +14,38 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
     FIXED: Immediate token delivery, proper tag handling, no buffering.
     """
 
-    def __init__(self, model="arcee-ai/trinity-large-preview:free"):
+    def __init__(self, models=None, model=None):
         self.api_key = os.environ.get("OPEN_ROUTER")
-        self.model = model
+        self.models = (
+            models or [model] if model else ["arcee-ai/trinity-large-preview:free"]
+        )
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
     def _sse(self, payload):
         """Format as SSE data line."""
         return f"data: {json.dumps(payload)}\n\n"
 
-    def stream_generation(self, prompt, existing_files=None, output_type="react", suppress_done=False):
+    def stream_generation(
+        self, prompt, existing_files=None, output_type="react", suppress_done=False
+    ):
         """
         Stream generation with real-time token delivery.
         Yields SSE events immediately as they arrive from API.
         """
-        if not self.api_key:
-            yield self._sse({"error": "OPEN_ROUTER API key missing"})
-            return
+            if not self.api_key:
+                yield self._sse({"error": "OPEN_ROUTER API key missing"})
+                return
 
-        is_edit = bool(existing_files)
-        system = (
-            self._build_edit_system_prompt()
-            if is_edit
-            else self._build_system_prompt(output_type)
-        )
-        user = self._build_user_message(prompt, existing_files, output_type, is_edit)
+            is_edit = bool(existing_files)
+            system = (
+                self._build_edit_system_prompt()
+                if is_edit
+                else self._build_system_prompt(output_type)
+            )
+            user = self._build_user_message(prompt, existing_files, output_type, is_edit)
 
-        model_display = self.model.split("/")[-1].replace(":free", "").upper()
-        yield self._sse({"progress": f"Initializing {model_display}..."})
+            model_display = attempt_model.split("/")[-1].replace(":free", "").upper()
+            yield self._sse({"progress": f"Initializing {model_display}..."})
 
         # Regex patterns
         META_TAGS = re.compile(
@@ -63,7 +67,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                     "Accept": "text/event-stream",
                 },
                 json={
-                    "model": self.model,
+                    "model": attempt_model,
                     "messages": [
                         {"role": "system", "content": system},
                         {"role": "user", "content": user},
@@ -76,19 +80,25 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 timeout=(30, 300),
             )
 
-            if not resp.ok:
-                error_text = resp.text[:500]
-                logger.error(f"OpenRouter HTTP {resp.status_code}: {error_text}")
-                yield self._sse(
-                    {"error": f"API Error {resp.status_code}: {error_text}"}
-                )
-                return
+                if not resp.ok:
+                    error_text = resp.text[:500]
+                    logger.error(f"OpenRouter HTTP {resp.status_code} for {attempt_model}: {error_text}")
+                    if attempt_model == self.models[-1]:
+                        # Last model failed
+                        yield self._sse(
+                            {"error": f"API Error {resp.status_code}: {error_text}"}
+                        )
+                        return
+                    else:
+                        # Try next model
+                        logger.info(f"Model {attempt_model} failed, trying next...")
+                        continue
 
             yield self._sse({"progress": "Connected - streaming..."})
 
             # Stream processing state
-            full_response = []        # Collects non-thinking code chunks
-            thinking_response = []    # Collects content from inside think blocks
+            full_response = []  # Collects non-thinking code chunks
+            thinking_response = []  # Collects content from inside think blocks
             in_think_block = False
             incomplete_buffer = ""
             detected_files = set()
@@ -96,7 +106,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
 
             for line in resp.iter_lines(decode_unicode=True):
                 # ── HEARTBEAT: Prevent proxy buffering by yielding a space ──
-                yield " " 
+                yield " "
 
                 if not line:
                     continue
@@ -248,16 +258,20 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 thinking_text = "".join(thinking_response)
                 files = self.parse_multi_file_output(thinking_text)
                 if files:
-                    logger.info(f"Fallback: parsed {len(files)} file(s) from thinking content.")
+                    logger.info(
+                        f"Fallback: parsed {len(files)} file(s) from thinking content."
+                    )
                     # Re-emit code as chunk events so frontend editor shows the code
                     for f in files:
                         marker = f"--- {f['name']} ---"
                         # Use self._sse internally
                         yield self._sse({"chunk": f"\n{marker}\n{f['content']}\n"})
-                    
+
                     yield self._sse({"files": files})
                     final_text = thinking_text
-                    explanation = explanation or self.extract_description(raw_text=thinking_text)
+                    explanation = explanation or self.extract_description(
+                        raw_text=thinking_text
+                    )
 
             if not files:
                 yield self._sse({"error": "No valid files generated"})

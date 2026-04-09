@@ -98,7 +98,7 @@ FILE STRUCTURE (EXACT):
 CRITICAL:
 1. Use .jsx extensions ALWAYS (not .ts, .tsx, .js)
 2. main.jsx MUST: const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<React.StrictMode><App /></React.StrictMode>)
-3. Unsplash IDs: photo-1518770660439-4636190af475, photo-1542831371-29b0f74f9713
+3. Use relevant Unsplash images: Choose appropriate photo IDs or use URLs like https://source.unsplash.com/featured/?{relevant - keyword} (e.g., ?restaurant for food sites, ?office for business, ?nature for outdoor). Avoid generic or code-related images.
 4. NO Next.js, NO TypeScript, NO CRA, NO remix. ONLY Vite + React.
 5. Import from 'lucide-react' for icons. Import from 'framer-motion' for animations.
 6. Tailwind classes from CDN config in vite.config.js.
@@ -169,12 +169,16 @@ MANDATORY:
         # 1. Try JSON format first (some models prefer it)
         try:
             trimmed = raw_text.strip()
-            if trimmed.startswith("[") or (trimmed.startswith("```json") and "[" in trimmed):
+            if trimmed.startswith("[") or (
+                trimmed.startswith("```json") and "[" in trimmed
+            ):
                 json_part = trimmed
                 if trimmed.startswith("```json"):
-                    json_part = re.search(r"```json\s*(\[\s*\{.*\}\s*\])\s*```", trimmed, re.DOTALL)
+                    json_part = re.search(
+                        r"```json\s*(\[\s*\{.*\}\s*\])\s*```", trimmed, re.DOTALL
+                    )
                     json_part = json_part.group(1) if json_part else trimmed
-                
+
                 parsed = json.loads(json_part)
                 if isinstance(parsed, list):
                     return [
@@ -204,28 +208,32 @@ MANDATORY:
         marker_pattern = (
             r"(?:\n|^)[-=#*]{2,}\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})\s*(?:[-=#*]{2,})?"
         )
-        
+
         # 4. If no standard markers found, try markdown code block fallback
         if not re.search(marker_pattern, clean_text):
             code_blocks = re.findall(r"```[\w]*\n(.*?)\n```", clean_text, re.DOTALL)
             for block in code_blocks:
-                name_match = re.search(r"(?://|#|/\*)\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})", block[:100])
+                name_match = re.search(
+                    r"(?://|#|/\*)\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})", block[:100]
+                )
                 if name_match:
-                    files.append({"name": name_match.group(1).lower(), "content": block.strip()})
-            
-            if files: 
+                    files.append(
+                        {"name": name_match.group(1).lower(), "content": block.strip()}
+                    )
+
+            if files:
                 return files
 
         # 5. AGGRESSIVE preamble stripping - find first marker
         first_marker = re.search(marker_pattern, clean_text, flags=re.IGNORECASE)
         if first_marker:
-            preamble = clean_text[:first_marker.start()]
+            preamble = clean_text[: first_marker.start()]
             # Only keep preamble if it's clearly not explanatory text
             if not BaseWebsiteGenerator._looks_like_explanation(preamble):
-                clean_text = preamble + clean_text[first_marker.start():]
+                clean_text = preamble + clean_text[first_marker.start() :]
             else:
                 # Aggressively strip all preamble
-                clean_text = clean_text[first_marker.start():]
+                clean_text = clean_text[first_marker.start() :]
 
         # 6. Split on markers and extract files
         parts = re.split(marker_pattern, clean_text, flags=re.IGNORECASE)
@@ -236,20 +244,27 @@ MANDATORY:
                 content = parts[i + 1].strip() if i + 1 < len(parts) else ""
 
                 # Skip invalid filenames
-                if any(stop in filename.lower() for stop in ["step", "thinking", "thought", "description"]):
+                if any(
+                    stop in filename.lower()
+                    for stop in ["step", "thinking", "thought", "description"]
+                ):
                     continue
 
                 # Strip markdown code fences
                 content = re.sub(r"^```[\w]*\n?", "", content, flags=re.MULTILINE)
                 content = re.sub(r"\n?```\s*$", "", content)
-                
+
                 # AGGRESSIVE: Strip explanatory preamble from inside code sections
                 content = BaseWebsiteGenerator._strip_explanation_from_content(content)
-                
-                # Standard trailing meta cleanup
-                content = BaseWebsiteGenerator._strip_trailing_meta_text(filename, content)
 
-                if filename and content and len(content.strip()) > 10:  # Minimum content length
+                # Standard trailing meta cleanup
+                content = BaseWebsiteGenerator._strip_trailing_meta_text(
+                    filename, content
+                )
+
+                if (
+                    filename and content and len(content.strip()) > 10
+                ):  # Minimum content length
                     files.append({"name": filename, "content": content})
 
         # 7. Final Fallback: Single file
@@ -260,14 +275,14 @@ MANDATORY:
                 files.append({"name": "src/App.jsx", "content": clean_text.strip()})
 
         return files
-    
+
     @staticmethod
     def _looks_like_explanation(text):
         """Detect if text looks like explanatory prose rather than code."""
         sample = (text or "").strip()
         if len(sample) < 20:
             return False
-        
+
         lowered = sample.lower()
         prose_markers = [
             "i'll ",
@@ -287,37 +302,62 @@ MANDATORY:
             "complete production",
             "description:",
         ]
-        
+
         # High prose marker density = explanation text
         marker_count = sum(1 for marker in prose_markers if marker in lowered)
-        code_tokens = sum(token in sample for token in ["import ", "export ", "function ", "{", "}", "<", "=>"])
-        
+        code_tokens = sum(
+            token in sample
+            for token in ["import ", "export ", "function ", "{", "}", "<", "=>"]
+        )
+
         return marker_count >= 2 or (marker_count >= 1 and code_tokens < 3)
-    
+
     @staticmethod
     def _strip_explanation_from_content(content):
         """Remove explanatory text that got mixed into file content."""
         if not content:
             return content
-        
-        lines = content.split('\n')
-        
+
+        lines = content.split("\n")
+
         # Find the line where actual code likely starts
         code_start_idx = 0
         for idx, line in enumerate(lines):
             stripped = line.strip()
             # Skip empty lines and stop at first real code
-            if stripped and not stripped.startswith('//') and not stripped.startswith('#'):
+            if (
+                stripped
+                and not stripped.startswith("//")
+                and not stripped.startswith("#")
+            ):
                 # Check if this looks like a code line
-                if any(token in stripped for token in ['import ', 'export ', 'const ', 'let ', 'var ', 'function ', '{', 'class ', '<', 'import', 'package.json', '{']):
+                if any(
+                    token in stripped
+                    for token in [
+                        "import ",
+                        "export ",
+                        "const ",
+                        "let ",
+                        "var ",
+                        "function ",
+                        "{",
+                        "class ",
+                        "<",
+                        "import",
+                        "package.json",
+                        "{",
+                    ]
+                ):
                     code_start_idx = idx
                     break
                 # If it looks like prose, keep searching
                 if BaseWebsiteGenerator._looks_like_explanation(stripped):
                     code_start_idx = idx + 1
-        
+
         # Rejoin, skipping leading explanation lines
-        result = '\n'.join(lines[code_start_idx:]).strip() if code_start_idx > 0 else content
+        result = (
+            "\n".join(lines[code_start_idx:]).strip() if code_start_idx > 0 else content
+        )
         return result
 
     def ensure_essential_files(self, files, output_type="react"):
@@ -328,7 +368,9 @@ MANDATORY:
         if not files:
             return files
 
-        normalized_files = self._normalize_supported_files(files, output_type=output_type)
+        normalized_files = self._normalize_supported_files(
+            files, output_type=output_type
+        )
         file_map = {f["name"].lower(): f for f in normalized_files}
         files = normalized_files
 
@@ -337,7 +379,9 @@ MANDATORY:
             files = self._upsert_file(
                 files,
                 "package.json",
-                self._build_supported_package_json(file_map.get("package.json", {}).get("content", "")),
+                self._build_supported_package_json(
+                    file_map.get("package.json", {}).get("content", "")
+                ),
             )
             file_map = {f["name"].lower(): f for f in files}
 
@@ -350,47 +394,59 @@ MANDATORY:
             file_map = {f["name"].lower(): f for f in files}
 
             if "tailwind.config.js" not in file_map:
-                files.append({
-                    "name": "tailwind.config.js",
-                    "content": "/** @type {import('tailwindcss').Config} */\nexport default {\n  content: ['./index.html', './src/**/*.{js,jsx}'],\n  theme: {\n    extend: {},\n  },\n  plugins: [],\n};"
-                })
+                files.append(
+                    {
+                        "name": "tailwind.config.js",
+                        "content": "/** @type {import('tailwindcss').Config} */\nexport default {\n  content: ['./index.html', './src/**/*.{js,jsx}'],\n  theme: {\n    extend: {},\n  },\n  plugins: [],\n};",
+                    }
+                )
                 file_map["tailwind.config.js"] = {"name": "tailwind.config.js"}
 
             if "postcss.config.js" not in file_map:
-                files.append({
-                    "name": "postcss.config.js",
-                    "content": "export default {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};"
-                })
+                files.append(
+                    {
+                        "name": "postcss.config.js",
+                        "content": "export default {\n  plugins: {\n    tailwindcss: {},\n    autoprefixer: {},\n  },\n};",
+                    }
+                )
                 file_map["postcss.config.js"] = {"name": "postcss.config.js"}
 
             # 3. index.html
             if "index.html" not in file_map:
                 logger.info("Injecting missing index.html")
-                files.append({
-                    "name": "index.html",
-                    "content": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />\n    <title>TechSpace AI Builder</title>\n  </head>\n  <body>\n    <div id=\"root\"></div>\n    <script type=\"module\" src=\"/src/main.jsx\"></script>\n  </body>\n</html>"
-                })
+                files.append(
+                    {
+                        "name": "index.html",
+                        "content": '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="UTF-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n    <title>TechSpace AI Builder</title>\n  </head>\n  <body>\n    <div id="root"></div>\n    <script type="module" src="/src/main.jsx"></script>\n  </body>\n</html>',
+                    }
+                )
 
             # 4. src/main.jsx (Entry point)
             if "src/main.jsx" not in file_map:
                 logger.info("Injecting missing src/main.jsx")
-                files.append({
-                    "name": "src/main.jsx",
-                    "content": "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);"
-                })
+                files.append(
+                    {
+                        "name": "src/main.jsx",
+                        "content": "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\nimport './index.css';\n\nReactDOM.createRoot(document.getElementById('root')).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>\n);",
+                    }
+                )
 
             if "src/app.jsx" not in file_map:
-                files.append({
-                    "name": "src/App.jsx",
-                    "content": "export default function App() {\n  return (\n    <main className=\"min-h-screen bg-slate-950 text-slate-50\">\n      <section className=\"mx-auto max-w-5xl px-6 py-24\">\n        <p className=\"text-sm uppercase tracking-[0.3em] text-cyan-300\">TechSpace Builder</p>\n        <h1 className=\"mt-6 text-5xl font-semibold tracking-tight\">Your generated site is ready for customization.</h1>\n        <p className=\"mt-6 max-w-2xl text-lg text-slate-300\">Update this starter with your own sections, content, and visual style.</p>\n      </section>\n    </main>\n  );\n}"
-                })
-            
+                files.append(
+                    {
+                        "name": "src/App.jsx",
+                        "content": 'export default function App() {\n  return (\n    <main className="min-h-screen bg-slate-950 text-slate-50">\n      <section className="mx-auto max-w-5xl px-6 py-24">\n        <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">TechSpace Builder</p>\n        <h1 className="mt-6 text-5xl font-semibold tracking-tight">Your generated site is ready for customization.</h1>\n        <p className="mt-6 max-w-2xl text-lg text-slate-300">Update this starter with your own sections, content, and visual style.</p>\n      </section>\n    </main>\n  );\n}',
+                    }
+                )
+
             # 5. src/index.css (Tailwind base)
             if "src/index.css" not in file_map:
-                 files.append({
-                    "name": "src/index.css",
-                    "content": "@tailwind base;\n@tailwind components;\n@tailwind utilities;"
-                })
+                files.append(
+                    {
+                        "name": "src/index.css",
+                        "content": "@tailwind base;\n@tailwind components;\n@tailwind utilities;",
+                    }
+                )
 
         return files
 
@@ -424,7 +480,9 @@ MANDATORY:
         normalized = path.lower()
         if normalized in cls.SUPPORTED_REACT_ROOT_FILES:
             return True
-        if normalized.startswith("src/") and re.search(r"\.(jsx|js|css|html|json|md)$", normalized):
+        if normalized.startswith("src/") and re.search(
+            r"\.(jsx|js|css|html|json|md)$", normalized
+        ):
             return True
         if normalized.startswith("public/") and normalized.endswith(".svg"):
             lowered_content = (content or "").lower()
@@ -450,10 +508,21 @@ MANDATORY:
         bullet_count = len(re.findall(r"(?m)^\s*[-*]\s+", sample))
         code_token_count = sum(
             token in sample
-            for token in ["import ", "export ", "function ", "return (", "<div", "{", "}", ";"]
+            for token in [
+                "import ",
+                "export ",
+                "function ",
+                "return (",
+                "<div",
+                "{",
+                "}",
+                ";",
+            ]
         )
 
-        return (bullet_count >= 2 or any(marker in lowered for marker in summary_markers)) and code_token_count < 4
+        return (
+            bullet_count >= 2 or any(marker in lowered for marker in summary_markers)
+        ) and code_token_count < 4
 
     @classmethod
     def _strip_trailing_meta_text(cls, filename, content):
@@ -462,7 +531,9 @@ MANDATORY:
 
         if lowered_filename.endswith(".svg"):
             if "<svg" in cleaned.lower() and "</svg>" in cleaned.lower():
-                return cleaned[: cleaned.lower().rfind("</svg>") + len("</svg>")].strip()
+                return cleaned[
+                    : cleaned.lower().rfind("</svg>") + len("</svg>")
+                ].strip()
             return ""
 
         if lowered_filename.endswith(".html") and "</html>" in cleaned.lower():
@@ -474,9 +545,9 @@ MANDATORY:
             flags=re.IGNORECASE,
         )
         if summary_anchor:
-            trailing = cleaned[summary_anchor.start():].strip()
+            trailing = cleaned[summary_anchor.start() :].strip()
             if cls._looks_like_summary_text(trailing):
-                cleaned = cleaned[:summary_anchor.start()].rstrip()
+                cleaned = cleaned[: summary_anchor.start()].rstrip()
 
         if cleaned.endswith("```"):
             cleaned = re.sub(r"\n?```\s*$", "", cleaned).rstrip()
@@ -554,7 +625,9 @@ MANDATORY:
             r"(?is)(complete production-ready.*|overview:.*|features:\s*.*|the app follows.*)$",
             raw_text or "",
         )
-        if fallback and BaseWebsiteGenerator._looks_like_summary_text(fallback.group(1)):
+        if fallback and BaseWebsiteGenerator._looks_like_summary_text(
+            fallback.group(1)
+        ):
             return fallback.group(1).strip()
 
         return ""

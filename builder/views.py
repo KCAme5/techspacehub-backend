@@ -46,12 +46,12 @@ BUILDER_MODEL_MAP = {
 # Capability-ranked fallback chain for code generation (strongest to weakest)
 # This is used for automatic model selection - users cannot override
 BUILDER_MODEL_FALLBACK_CHAIN = [
-    "openai/gpt-oss-120b:free",                     # 1. Strongest - GPT-4 distilled
-    "nvidia/nemotron-3-super-120b-a12b:free",      # 2. Very strong
-    "z-ai/glm-4.5-air:free",                        # 3. Strong coding capability
-    "arcee-ai/trinity-large-preview:free",          # 4. Good capability
-    "minimax/minimax-m2.5:free",                    # 5. Decent capability
-    "stepfun/step-3.5-flash:free",                  # 6. Fallback (fast but less capable)
+    "openai/gpt-oss-120b:free",  # 1. Strongest - GPT-4 distilled
+    "nvidia/nemotron-3-super-120b-a12b:free",  # 2. Very strong
+    "z-ai/glm-4.5-air:free",  # 3. Strong coding capability
+    "arcee-ai/trinity-large-preview:free",  # 4. Good capability
+    "minimax/minimax-m2.5:free",  # 5. Decent capability
+    "stepfun/step-3.5-flash:free",  # 6. Fallback (fast but less capable)
 ]
 
 DEFAULT_BUILDER_MODEL = "gpt-oss"  # Strongest model is default
@@ -75,11 +75,11 @@ def get_builder_model_fallback_chain():
 def resolve_builder_model(use_fallback_chain=False):
     """
     Resolve the builder model to use.
-    
+
     Args:
         use_fallback_chain: If True, returns the ordered fallback chain for sequential retry.
                           If False, returns only the primary (strongest) model.
-    
+
     Returns:
         str: Single model name if use_fallback_chain=False
         list: Ordered list of model names if use_fallback_chain=True
@@ -143,7 +143,9 @@ def derive_project_name_from_files(files, fallback_name="Untitled Project"):
 
     index_html = get_file_content("index.html")
     if index_html:
-        title_match = re.search(r"<title>\s*(.*?)\s*</title>", index_html, flags=re.IGNORECASE | re.DOTALL)
+        title_match = re.search(
+            r"<title>\s*(.*?)\s*</title>", index_html, flags=re.IGNORECASE | re.DOTALL
+        )
         title = _clean_project_title(title_match.group(1) if title_match else "")
         if title:
             return title
@@ -234,7 +236,12 @@ def _apply_fix_to_session_files(files, fix_data, preferred_file_path=""):
 def _normalize_fix_target_path(path):
     candidate = (path or "").replace("\\", "/").strip().lower()
     candidate = re.sub(r"^\.\/", "", candidate)
-    if not candidate or ".." in candidate or candidate.startswith("/") or ":" in candidate:
+    if (
+        not candidate
+        or ".." in candidate
+        or candidate.startswith("/")
+        or ":" in candidate
+    ):
         return ""
     if not re.match(r"^[a-z0-9_./-]+\.(jsx|js|css|html|json)$", candidate):
         return ""
@@ -255,7 +262,9 @@ def _allowed_new_fix_targets():
     return updated_files
 
 
-def stream_and_persist_session(stream, session, user, fallback_explanation, restore_credit_on_failure=False):
+def stream_and_persist_session(
+    stream, session, user, fallback_explanation, restore_credit_on_failure=False
+):
     """
     Proxy streamed SSE events to the client while persisting session lifecycle state.
     """
@@ -269,7 +278,9 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
     completion_persisted = False
 
     def persist_completed_state():
-        project_name = derive_project_name_from_files(last_files, fallback_name=session.project_name or "Untitled Project")
+        project_name = derive_project_name_from_files(
+            last_files, fallback_name=session.project_name or "Untitled Project"
+        )
         session.files = last_files
         session.project_name = project_name
         session.explanation = explanation
@@ -331,10 +342,15 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
                         completion_persisted = True
             yield event
     except Exception as exc:
-        logger.error("Stream persistence error for session %s: %s", session.id, exc, exc_info=True)
+        logger.error(
+            "Stream persistence error for session %s: %s",
+            session.id,
+            exc,
+            exc_info=True,
+        )
         last_error = str(exc)
         _append_build_log(build_logs, last_error)
-        yield f'data: {json.dumps({"error": last_error})}\n\n'
+        yield f"data: {json.dumps({'error': last_error})}\n\n"
     finally:
         session.raw_response = "".join(raw_events)
         session.build_logs = build_logs[-200:]
@@ -343,7 +359,9 @@ def stream_and_persist_session(stream, session, user, fallback_explanation, rest
             if not completion_persisted:
                 persist_completed_state()
         else:
-            session.last_error = last_error or "Generation did not complete successfully."
+            session.last_error = (
+                last_error or "Generation did not complete successfully."
+            )
             session.status = "error"
             session.build_status = "failed"
             session.runtime_status = "failed"
@@ -415,11 +433,11 @@ class ValidatePromptView(APIView):
     """
     POST /api/builder/validate-prompt/
     Validates that a user's prompt is actually requesting website generation.
-    
+
     Body: { prompt: str }
-    
+
     Response:
-    { 
+    {
         "is_valid": true/false,
         "reason": str,
         "suggestion": str (only if invalid)
@@ -443,12 +461,12 @@ class ValidatePromptView(APIView):
 
         try:
             result = route_builder_message(prompt)
-            
+
             logger.info(
                 f"Prompt validation for user {request.user.username}: "
                 f"intent={result['intent']}, valid={result['is_valid']}, reason={result['reason']}"
             )
-            
+
             return Response(result, status=status.HTTP_200_OK)
         except Exception as e:
             logger.error(f"Validation error: {e}")
@@ -485,7 +503,9 @@ class AssistantMessageView(APIView):
 
         session = None
         if session_id:
-            session = get_object_or_404(GenerationSession, id=session_id, user=request.user)
+            session = get_object_or_404(
+                GenerationSession, id=session_id, user=request.user
+            )
 
         route = route_builder_message(
             message,
@@ -503,14 +523,14 @@ class FixErrorView(APIView):
     """
     POST /api/builder/fix-error/
     Analyzes a console error and generates AI-suggested fixes.
-    
+
     Body: {
         "error_message": str,
         "code_snippet": str (optional),
         "file_path": str (optional),
         "language": str (optional, defaults to "javascript")
     }
-    
+
     Response:
     {
         "success": bool,
@@ -601,8 +621,6 @@ class FixErrorView(APIView):
                 status=status.HTTP_200_OK,  # Still 200 to allow frontend to handle gracefully
             )
 
-
-
     """
     POST /api/builder/credits/purchase/
     Body: { package_id, phone_number }
@@ -641,7 +659,6 @@ class FixErrorView(APIView):
 
         # Initiate M-Pesa STK push
         try:
-
             payment_id_str = str(payment.id)
             payment_ref_suffix = payment_id_str[:8].upper()
             result = initiate_stk_push(
@@ -743,7 +760,7 @@ class MpesaCreditCallbackView(APIView):
                 payment.save()
 
                 user_credits, _ = get_or_create_credits(payment.user)
-                
+
                 # Update existing credits - use F() objects for atomicity
                 UserCredits.objects.filter(pk=user_credits.pk).update(
                     credits=F("credits") + payment.credits,
@@ -809,7 +826,9 @@ class PurchaseCreditsView(APIView):
 
             # Option 1: Purchase by package
             if package_id:
-                package = get_object_or_404(CreditPackage, id=package_id, is_active=True)
+                package = get_object_or_404(
+                    CreditPackage, id=package_id, is_active=True
+                )
                 credits = package.credits
                 amount = package.price_kes
                 package_name = package.name
@@ -1045,8 +1064,10 @@ class GenerateView(APIView):
             with transaction.atomic():
                 user_credits, _ = get_or_create_credits(request.user)
                 # Refresh from DB to get the latest locked row
-                user_credits = UserCredits.objects.select_for_update().get(pk=user_credits.pk)
-                
+                user_credits = UserCredits.objects.select_for_update().get(
+                    pk=user_credits.pk
+                )
+
                 if user_credits.credits <= 0:
                     return Response(
                         {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
@@ -1080,16 +1101,16 @@ class GenerateView(APIView):
         def stream_response():
             """Generator yielding SSE events via AgentOrchestrator."""
             from .services.agent_orchestrator import AgentOrchestrator
-            
+
             # The frontend should ideally send a session_id, but for now we generate one
             orchestrator = AgentOrchestrator(session_id=str(session.id))
-            
+
             try:
                 stream = orchestrator.stream_build(
                     prompt=prompt,
-                    model_name=model_name,
+                    model_chain=model_chain,
                     existing_files=existing_files,
-                    is_chat=False
+                    is_chat=False,
                 )
                 yield from stream_and_persist_session(
                     stream=stream,
@@ -1103,9 +1124,11 @@ class GenerateView(APIView):
                 session.status = "error"
                 session.build_status = "failed"
                 session.last_error = str(e)
-                session.save(update_fields=["status", "build_status", "last_error", "updated_at"])
+                session.save(
+                    update_fields=["status", "build_status", "last_error", "updated_at"]
+                )
                 restore_generation_credit(request.user)
-                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         response = StreamingHttpResponse(
             stream_response(), content_type="text/event-stream"
@@ -1129,7 +1152,7 @@ class SessionListView(APIView):
             logger.error(f"Error serializing sessions: {e}", exc_info=True)
             return Response(
                 {"error": f"Failed to load sessions: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
@@ -1191,7 +1214,10 @@ class RuntimePrepareView(APIView):
         session.runtime_session_id = runtime_bundle.runtime_session_id
         session.runtime_metadata = {
             **(session.runtime_metadata or {}),
-            "prepare_count": int((session.runtime_metadata or {}).get("prepare_count", 0)) + 1,
+            "prepare_count": int(
+                (session.runtime_metadata or {}).get("prepare_count", 0)
+            )
+            + 1,
             "output_type": session.output_type,
             "provider_payload_version": 1,
         }
@@ -1263,7 +1289,9 @@ class RuntimeEventView(APIView):
             session.build_logs = build_logs[-200:]
 
         if runtime_status == "failed":
-            session.last_error = request.data.get("error", "").strip() or session.last_error
+            session.last_error = (
+                request.data.get("error", "").strip() or session.last_error
+            )
             if session.last_error:
                 session.build_status = "failed"
 
@@ -1305,7 +1333,12 @@ class RuntimeVerifyView(APIView):
 
         session.verification_attempts += 1
 
-        has_errors = bool(error_message or browser_errors or build_errors or runtime_status == "failed")
+        has_errors = bool(
+            error_message
+            or browser_errors
+            or build_errors
+            or runtime_status == "failed"
+        )
         if has_errors:
             combined_errors = []
             if error_message:
@@ -1366,7 +1399,9 @@ class RuntimeAutoFixView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
 
-        error_message = request.data.get("error_message", "").strip() or session.last_error
+        error_message = (
+            request.data.get("error_message", "").strip() or session.last_error
+        )
         if not error_message:
             return Response(
                 {"error": "ERROR_MESSAGE_REQUIRED"},
@@ -1395,7 +1430,9 @@ class RuntimeAutoFixView(APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        updated_files = _apply_fix_to_session_files(session.files, fix_data, preferred_file_path=file_path)
+        updated_files = _apply_fix_to_session_files(
+            session.files, fix_data, preferred_file_path=file_path
+        )
         if updated_files is None:
             return Response(
                 {"error": "UNSAFE_FIX_TARGET"},
@@ -1410,7 +1447,10 @@ class RuntimeAutoFixView(APIView):
         session.files = updated_files
 
         logs = list(session.build_logs or [])
-        _append_build_log(logs, f"[auto-fix] Attempt {session.auto_fix_attempts}: {fix_data.get('explanation', 'Applied runtime fix.')}")
+        _append_build_log(
+            logs,
+            f"[auto-fix] Attempt {session.auto_fix_attempts}: {fix_data.get('explanation', 'Applied runtime fix.')}",
+        )
         session.build_logs = logs[-200:]
 
         runtime_metadata = dict(session.runtime_metadata or {})
@@ -1460,8 +1500,7 @@ class DeleteSessionView(APIView):
     def delete(self, request, session_id):
         try:
             session = GenerationSession.objects.get(id=session_id, user=request.user)
-            
-                
+
             session.delete()
             return Response({"success": True})
         except GenerationSession.DoesNotExist:
@@ -1878,14 +1917,13 @@ class ChatView(APIView):
     def post(self, request, session_id):
         """Continue conversation with context."""
         user_message = request.data.get("message", "").strip()
-        
+
         # Note: Model selection is NO LONGER USER-CONFIGURABLE
         # System uses capability-ranked fallback chain automatically
-        
+
         if not user_message:
             return Response(
-                {"error": "Message is required"},
-                status=status.HTTP_400_BAD_REQUEST
+                {"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST
             )
 
         # Get the existing session
@@ -1904,28 +1942,31 @@ class ChatView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
-        
+
         # Get conversation history
         conversation = session.conversation or []
-        
+
         # Add user message to conversation
-        conversation.append({
-            "role": "user",
-            "content": user_message,
-            "timestamp": timezone.now().isoformat()
-        })
+        conversation.append(
+            {
+                "role": "user",
+                "content": user_message,
+                "timestamp": timezone.now().isoformat(),
+            }
+        )
 
         # Credit check - for follow-up generations
         try:
             with transaction.atomic():
                 user_credits, _ = get_or_create_credits(request.user)
                 # Refresh from DB to get the latest locked row
-                user_credits = UserCredits.objects.select_for_update().get(pk=user_credits.pk)
-                
+                user_credits = UserCredits.objects.select_for_update().get(
+                    pk=user_credits.pk
+                )
+
                 if user_credits.credits <= 0:
                     return Response(
-                        {"error": "NO_CREDITS"},
-                        status=status.HTTP_402_PAYMENT_REQUIRED
+                        {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
                     )
                 user_credits.credits -= 1
                 user_credits.total_used += 1
@@ -1933,8 +1974,7 @@ class ChatView(APIView):
         except Exception as e:
             logger.error(f"Credit check error in ChatView: {e}")
             return Response(
-                {"error": "NO_CREDITS"},
-                status=status.HTTP_402_PAYMENT_REQUIRED
+                {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
             )
 
         session.intent_type = route["intent"]
@@ -1956,23 +1996,21 @@ class ChatView(APIView):
         # Build context for AI
         existing_files = session.files
         output_type = session.output_type
-        
+
         # Get the primary (strongest) model - no user override
         model_name = resolve_builder_model(use_fallback_chain=False)
 
         def stream_response():
             try:
                 from .services.agent_orchestrator import AgentOrchestrator
-                
-                orchestrator = AgentOrchestrator(
-                    session_id=str(session.id)
-                )
-                
+
+                orchestrator = AgentOrchestrator(session_id=str(session.id))
+
                 gen = orchestrator.stream_build(
                     prompt=user_message,
                     model_name=model_name,
                     existing_files=existing_files,
-                    is_chat=True
+                    is_chat=True,
                 )
                 yield from stream_and_persist_session(
                     stream=gen,
@@ -1982,14 +2020,18 @@ class ChatView(APIView):
                     restore_credit_on_failure=True,
                 )
 
-                session.refresh_from_db(fields=["status", "files", "explanation", "preview_url"])
+                session.refresh_from_db(
+                    fields=["status", "files", "explanation", "preview_url"]
+                )
                 if session.status == "done":
-                    conversation.append({
-                        "role": "assistant",
-                        "content": session.explanation,
-                        "files": session.files,
-                        "timestamp": timezone.now().isoformat()
-                    })
+                    conversation.append(
+                        {
+                            "role": "assistant",
+                            "content": session.explanation,
+                            "files": session.files,
+                            "timestamp": timezone.now().isoformat(),
+                        }
+                    )
                     session.conversation = conversation
                     session.save(update_fields=["conversation", "updated_at"])
                     yield f"data: {json.dumps({'complete': True, 'build_verified': False, 'preview_url': session.preview_url, 'files': session.files, 'conversation': conversation})}\n\n"
@@ -1999,10 +2041,12 @@ class ChatView(APIView):
                 session.status = "error"
                 session.build_status = "failed"
                 session.last_error = str(e)
-                session.save(update_fields=["status", "build_status", "last_error", "updated_at"])
+                session.save(
+                    update_fields=["status", "build_status", "last_error", "updated_at"]
+                )
                 restore_generation_credit(request.user)
 
-                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         # Streaming response
         response = StreamingHttpResponse(
@@ -2015,16 +2059,18 @@ class ChatView(APIView):
         response["X-Accel-Buffering"] = "no"
         response["Content-Encoding"] = "identity"
         response["Connection"] = "keep-alive"
-        
+
         return response
 
-    def _build_context_prompt(self, user_message, conversation_history, existing_files, output_type):
+    def _build_context_prompt(
+        self, user_message, conversation_history, existing_files, output_type
+    ):
         """
         Build a context-aware prompt that includes previous conversation.
         This helps the AI understand the full context of edits.
         """
         context_parts = []
-        
+
         # Add conversation history as context
         if conversation_history:
             context_parts.append("CONVERSATION HISTORY:")
@@ -2033,7 +2079,7 @@ class ChatView(APIView):
                 content = msg.get("content", "")
                 context_parts.append(f"{role.upper()}: {content}")
             context_parts.append("")
-        
+
         # Current files context
         if existing_files:
             context_parts.append("CURRENT PROJECT FILES:")
@@ -2043,7 +2089,7 @@ class ChatView(APIView):
                 content = f.get("content", "")[:500]
                 context_parts.append(content)
                 context_parts.append("")
-        
+
         # Current user request
         context_parts.append(f"USER REQUEST: {user_message}")
         context_parts.append("")
@@ -2052,5 +2098,5 @@ class ChatView(APIView):
             "make the requested changes. Preserve working code that doesn't need to change. "
             "Return only the files that were modified using the --- filename --- format."
         )
-        
+
         return "\n".join(context_parts)
