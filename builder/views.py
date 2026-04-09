@@ -5,6 +5,8 @@ import io
 import zipfile
 import base64
 import re
+import asyncio
+from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.db.models import F
 from django.http import StreamingHttpResponse
@@ -55,6 +57,24 @@ BUILDER_MODEL_FALLBACK_CHAIN = [
 ]
 
 DEFAULT_BUILDER_MODEL = "gpt-oss"  # Strongest model is default
+
+
+async def make_async_generator(sync_gen):
+    """
+    Safely adapts a synchronous generator into an asynchronous one.
+    This prevents Django 4.2+ ASGI servers from crashing with 
+    'TypeError: async for requires an object with __aiter__ method, got map'
+    """
+    iterator = iter(sync_gen)
+    while True:
+        try:
+            chunk = await sync_to_async(next, thread_sensitive=False)(iterator)
+            yield chunk
+        except StopIteration:
+            break
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            break
 
 
 def route_builder_message(prompt, has_existing_project=False):
@@ -1058,7 +1078,7 @@ class GenerateView(APIView):
                 yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
         response = StreamingHttpResponse(
-            stream_response(), content_type="text/event-stream"
+            make_async_generator(stream_response()), content_type="text/event-stream"
         )
         response["Cache-Control"] = "no-cache"
         response["X-Accel-Buffering"] = "no"
@@ -1987,7 +2007,7 @@ class ChatView(APIView):
 
         # Streaming response
         response = StreamingHttpResponse(
-            stream_response(),
+            make_async_generator(stream_response()),
             content_type="text/event-stream",
         )
         response["Cache-Control"] = "no-cache, no-store, must-revalidate"
