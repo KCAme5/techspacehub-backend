@@ -7,6 +7,22 @@ from .base import BaseWebsiteGenerator
 
 logger = logging.getLogger(__name__)
 
+# Import canonical fallback chain — single source of truth is views.py
+def _get_default_chain():
+    try:
+        from builder.views import BUILDER_MODEL_FALLBACK_CHAIN
+        return BUILDER_MODEL_FALLBACK_CHAIN
+    except ImportError:
+        # Hardcoded safety net — keep in sync with views.py
+        return [
+            "openai/gpt-oss-120b:free",
+            "nvidia/nemotron-3-super-120b-a12b:free",
+            "z-ai/glm-4.5-air:free",
+            "arcee-ai/trinity-large-preview:free",
+            "minimax/minimax-m2.5:free",
+            "stepfun/step-3.5-flash:free",
+        ]
+
 
 class OpenRouterBuilderClient(BaseWebsiteGenerator):
     """
@@ -17,7 +33,8 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
     def __init__(self, models=None, model=None):
         self.api_key = os.environ.get("OPEN_ROUTER")
         self.models = (
-            models or [model] if model else ["arcee-ai/trinity-large-preview:free"]
+            models if models else
+            ([model] if model else _get_default_chain())
         )
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
