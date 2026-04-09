@@ -157,14 +157,44 @@ MANDATORY:
         )
 
     @staticmethod
-    def parse_multi_file_output(raw_text):
+    def parse_incremental_files(raw_text):
         """
-        Parse AI output for file markers: --- filename --- or ### filename ###
-        Aggressively strips explanatory text and preamble.
-        Returns: [{"name": str, "content": str}]
+        Light-weight version of multi-file parser specifically for streaming.
+        Returns the current list of detected files, even if the last one is partial.
         """
         if not raw_text or not isinstance(raw_text, str):
             return []
+
+        # 1. Very fast regex to find all markers
+        marker_pattern = (
+            r"(?:\n|^)[-=#*]{3,}\s*([\w./\-\\]+\.[a-zA-Z0-9]{1,10})\s*(?:[-=#*]{3,})?"
+        )
+        
+        # We use re.finditer to avoid expensive full re.split on large streams
+        matches = list(re.finditer(marker_pattern, raw_text, re.IGNORECASE))
+        if not matches:
+            return []
+
+        files = []
+        for i, match in enumerate(matches):
+            filename = match.group(1).lower().strip()
+            
+            # Start of this file's content
+            start_pos = match.end()
+            
+            # End of this file's content is start of next match or end of string
+            end_pos = matches[i + 1].start() if i + 1 < len(matches) else len(raw_text)
+            
+            content = raw_text[start_pos:end_pos].strip()
+            
+            # Basic validation to avoid false positives (e.g. fragments of markers)
+            if filename and (len(content) > 0 or i < len(matches) - 1):
+                files.append({"name": filename, "content": content})
+        
+        return files
+
+    @staticmethod
+    def parse_multi_file_output(raw_text):
 
         files = []
 

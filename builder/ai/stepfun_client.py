@@ -102,10 +102,19 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 thinking_response = []  # Collects content from inside think blocks
                 in_think_block = False
                 incomplete_buffer = ""
-                detected_files = set()
+                detected_files = [] # Ordered list of detected filenames
+                last_yielded_files_len = 0
+                last_yield_char_count = 0
                 last_progress = ""
 
-                for line in resp.iter_lines(decode_unicode=True):
+                def safe_iter_lines(response):
+                    try:
+                        for chunk_line in response.iter_lines(decode_unicode=True):
+                            yield chunk_line
+                    except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError) as ce:
+                        logger.warning(f"Stream ended prematurely: {ce}. Attempting to parse whatever chunks we got.")
+
+                for line in safe_iter_lines(resp):
                     # ── HEARTBEAT: Prevent proxy buffering by yielding a space ──
                     yield " "
 
@@ -220,21 +229,34 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                                 yield self._sse({"chunk": remaining})
                                 break
 
-                    # Check for file markers in recent output — also check thinking buffer
-                    # (some models output code entirely within think blocks)
-                    recent_code = "".join(full_response[-1000:])
-                    recent_thinking = "".join(thinking_response[-1000:])
-                    recent = recent_code if recent_code.strip() else recent_thinking
-                    file_matches = FILE_MARKER.findall(recent)
+                    # ── INCREMENTAL FILE DISTRIBUTION ──
+                    current_raw_text = "".join(full_response)
+                    
+                    # Detect NEW files to signal progress and completion
+                    recent_window = current_raw_text[-1500:] # Focus on tail for speed
+                    file_matches = FILE_MARKER.findall(recent_window)
+                    
                     for fname in file_matches:
                         fname_lower = fname.lower()
                         if fname_lower not in detected_files:
-                            detected_files.add(fname_lower)
+                            # If there was a previous file, it's now completed
+                            if detected_files:
+                                prev_file = detected_files[-1]
+                                yield self._sse({"file_completed": prev_file})
+                            
+                            detected_files.append(fname_lower)
                             action = "Editing" if is_edit else "Creating"
                             progress_msg = f"{action} {fname_lower}..."
                             if progress_msg != last_progress:
                                 last_progress = progress_msg
                                 yield self._sse({"progress": progress_msg})
+
+                    # Yield incremental file content every ~300 chars for live editor updates
+                    if len(current_raw_text) - last_yield_char_count > 300:
+                        incremental_files = self.parse_incremental_files(current_raw_text)
+                        if incremental_files:
+                            yield self._sse({"files": incremental_files})
+                            last_yield_char_count = len(current_raw_text)
 
                 # Finalize
                 yield self._sse({"progress": "Processing files..."})
