@@ -14,7 +14,7 @@ class UserCredits(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="ai_credits"
     )
-    credits = models.IntegerField(default=20)  # starts at 20 free
+    credits = models.IntegerField(default=200)  # starts at 200 free (scaled x10)
     total_purchased = models.IntegerField(default=0)
     total_used = models.IntegerField(default=0)
     is_free_tier = models.BooleanField(default=True)  # flips False after first purchase
@@ -26,7 +26,7 @@ class UserCredits(models.Model):
 
     @property
     def is_low(self):
-        return 0 < self.credits <= 3
+        return 0 < self.credits <= 30
 
     def __str__(self):
         return f"{self.user.username} — {self.credits} credits"
@@ -143,6 +143,10 @@ class GenerationSession(models.Model):
     # NEW: File tree structure for hierarchical folders
     file_tree = models.JSONField(default=dict)  # { "root": { "folders": {}, "files": {} } }
     
+    # NEW: Persistent Design and Preference context
+    design_tokens = models.JSONField(default=dict)  # { "colors": {}, "typography": {} }
+    user_preferences = models.JSONField(default=dict)  # { "style": "", "stack": "" }
+
     # NEW: Conversation history for agentic workflow
     conversation = models.JSONField(default=list)  # [{ role: "user" | "assistant", content: str, files: [] }]
     

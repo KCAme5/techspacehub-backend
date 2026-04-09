@@ -726,8 +726,8 @@ class DeductCreditView(APIView):
                         {"error": "Not enough credits."},
                         status=status.HTTP_402_PAYMENT_REQUIRED,
                     )
-                credits_obj.credits -= 1
-                credits_obj.total_used += 1
+                credits_obj.credits -= 10
+                credits_obj.total_used += 10
                 credits_obj.save()
                 return Response({"credits": credits_obj.credits})
         except UserCredits.DoesNotExist:
@@ -995,12 +995,12 @@ class GenerateView(APIView):
                     pk=user_credits.pk
                 )
 
-                if user_credits.credits <= 0:
+                if user_credits.credits < 10:
                     return Response(
                         {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
                     )
-                user_credits.credits -= 1
-                user_credits.total_used += 1
+                user_credits.credits -= 10
+                user_credits.total_used += 10
                 user_credits.save()
         except Exception as e:
             logger.error(f"Credit check error: {e}")
@@ -1019,7 +1019,7 @@ class GenerateView(APIView):
             intent_type=route["intent"],
             build_status="generating",
             build_attempts=1,
-            credits_used=1,
+            credits_used=10,
         )
 
         # Get the primary (strongest) model - no user override
@@ -1891,12 +1891,15 @@ class ChatView(APIView):
                     pk=user_credits.pk
                 )
 
-                if user_credits.credits <= 0:
+                cost = 2 if route["intent"] in ["edit_existing", "fix_error", "build_new"] else 0
+                if cost > 0 and user_credits.credits < cost:
                     return Response(
                         {"error": "NO_CREDITS"}, status=status.HTTP_402_PAYMENT_REQUIRED
                     )
-                user_credits.credits -= 1
-                user_credits.total_used += 1
+                if cost > 0:
+                    user_credits.credits -= cost
+                    user_credits.total_used += cost
+                    user_credits.save()
                 user_credits.save()
         except Exception as e:
             logger.error(f"Credit check error in ChatView: {e}")
@@ -1924,6 +1927,13 @@ class ChatView(APIView):
         existing_files = session.files
         output_type = session.output_type
 
+        enriched_prompt = self._build_context_prompt(
+            user_message=user_message,
+            conversation_history=conversation,
+            design_tokens=session.design_tokens,
+            user_preferences=session.user_preferences
+        )
+
         # Get the primary (strongest) model - no user override
         model_name = resolve_builder_model(use_fallback_chain=False)
 
@@ -1934,7 +1944,7 @@ class ChatView(APIView):
                 orchestrator = AgentOrchestrator(session_id=str(session.id))
 
                 gen = orchestrator.stream_build(
-                    prompt=user_message,
+                    prompt=enriched_prompt,
                     model_chain=model_name,
                     existing_files=existing_files,
                     is_chat=True,
@@ -1990,40 +2000,37 @@ class ChatView(APIView):
         return response
 
     def _build_context_prompt(
-        self, user_message, conversation_history, existing_files, output_type
+        self, user_message, conversation_history, design_tokens=None, user_preferences=None
     ):
         """
-        Build a context-aware prompt that includes previous conversation.
-        This helps the AI understand the full context of edits.
+        Build a context-aware prompt that includes previous conversation and persistent state.
+        This helps the AI understand the full persistent context without duplicating files.
         """
         context_parts = []
+        
+        if user_preferences and any(user_preferences.values()):
+            context_parts.append(f"PROJECT USER PREFERENCES: {json.dumps(user_preferences)}")
+            
+        if design_tokens and any(design_tokens.values()):
+            context_parts.append(f"PROJECT DESIGN SYSTEM / TOKENS: {json.dumps(design_tokens)}")
 
         # Add conversation history as context
         if conversation_history:
             context_parts.append("CONVERSATION HISTORY:")
-            for msg in conversation_history[-5:]:  # Last 5 messages for context
+            # Use only the last 4 messages to prevent bloat
+            for msg in conversation_history[-4:]:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                context_parts.append(f"{role.upper()}: {content}")
+                if "files" not in msg: # Keep it concise
+                    context_parts.append(f"{role.upper()}: {content}")
             context_parts.append("")
 
-        # Current files context
-        if existing_files:
-            context_parts.append("CURRENT PROJECT FILES:")
-            for f in existing_files[:10]:  # First 10 files
-                context_parts.append(f"--- {f.get('name', 'unknown')} ---")
-                # Include first 500 chars of each file as context
-                content = f.get("content", "")[:500]
-                context_parts.append(content)
-                context_parts.append("")
-
         # Current user request
-        context_parts.append(f"USER REQUEST: {user_message}")
+        context_parts.append(f"CURRENT USER REQUEST: {user_message}")
         context_parts.append("")
         context_parts.append(
-            "Based on the conversation history and current files above, "
-            "make the requested changes. Preserve working code that doesn't need to change. "
-            "Return only the files that were modified using the --- filename --- format."
+            "Based on the conversation history and design context above, "
+            "make the requested changes. Preserve working code that doesn't need to change."
         )
 
         return "\n".join(context_parts)

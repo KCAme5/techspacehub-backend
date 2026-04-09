@@ -65,6 +65,29 @@ class AgentOrchestrator:
             generated_files, output_type="react"
         )
 
+        # 3. Proactive Error Prevention
+        yield self._sse({"status": "Running proactive code analysis..."})
+        
+        fixer = None
+        for i, f in enumerate(generated_files):
+            if f["name"].endswith(".jsx") or f["name"].endswith(".js"):
+                err = self._heuristic_syntax_check(f.get("content", ""))
+                if err:
+                    yield self._sse({"status": f"Proactive check found error in {f['name']}, auto-fixing..."})
+                    if not fixer:
+                        from .error_fixer import get_error_fixer
+                        fixer = get_error_fixer()
+                    
+                    fix_data = fixer.get_ai_fix({
+                        "error_message": err,
+                        "code_snippet": f["content"],
+                        "file_path": f["name"],
+                        "language": "javascript"
+                    })
+                    if fix_data and fix_data.get("fixed_code"):
+                        generated_files[i]["content"] = fix_data["fixed_code"]
+                        yield self._sse({"status": f"Auto-fix applied to {f['name']} successfully."})
+
         yield self._sse(
             {
                 "complete": True,
@@ -80,3 +103,22 @@ class AgentOrchestrator:
             logger.info(f"Cleaning up session {self.session_id}")
             # Placeholder for WebContainer/E2B cleanup
             del self.active_sessions[self.session_id]
+
+    def _heuristic_syntax_check(self, content: str) -> str:
+        """Returns error string if obvious syntax error found, else empty string."""
+        if not content:
+            return ""
+        
+        # Check unbalanced braces
+        if content.count('{') != content.count('}'):
+            return "SyntaxError: Unbalanced curly braces {}"
+            
+        # Check unbalanced parentheses
+        if content.count('(') != content.count(')'):
+            return "SyntaxError: Unbalanced parentheses ()"
+            
+        # Check unresolved conflict markers
+        if "<<<<<<< HEAD" in content or "=======" in content or ">>>>>>>" in content:
+            return "SyntaxError: Unresolved merge conflict markers"
+            
+        return ""

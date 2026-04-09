@@ -34,7 +34,8 @@ class BaseWebsiteGenerator:
 === STRICT OUTPUT PROTOCOL ===
 OUTPUT FORMAT (FOLLOW EXACTLY, CHARACTER FOR CHARACTER):
 <think>
-[Your reasoning here - NO CODE, ONLY TEXT]
+[Your reasoning and code planning here - NO CODE, ONLY TEXT]
+[CRITICAL: You MUST mentally validate the syntax of your generated code here. Check for unmatched brackets, missing imports, and invalid JSX.]
 </think>
 
 --- filename.ext ---
@@ -56,6 +57,7 @@ MANDATORY RULES:
 6. ALL code must be complete and syntactically valid. NO "..." ellipsis, NO omitted sections.
 7. Between </think> and the first --- filename ---, output NOTHING. Jump straight to first file marker.
 8. If you start explaining something, STOP. Output ONLY code in the file sections.
+9. SELF-CORRECTION: Before outputting the final file block, verify that all JSX tags are closed, all imports exist, and that variable names match.
 """
         if output_type == "html":
             return f"""You are an EXPERT Senior Frontend Engineer building PRODUCTION-READY HTML websites.

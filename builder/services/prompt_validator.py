@@ -106,6 +106,9 @@ Respond with ONLY valid JSON:
         "what is this",
         "explain",
         "tell me about",
+        "why did you",
+        "how do i",
+        "what is the",
     )
 
     def __init__(self):
