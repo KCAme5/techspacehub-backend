@@ -100,7 +100,7 @@ FILE STRUCTURE (EXACT):
 CRITICAL:
 1. Use .jsx extensions ALWAYS (not .ts, .tsx, .js)
 2. main.jsx MUST: const root = ReactDOM.createRoot(document.getElementById('root')); root.render(<React.StrictMode><App /></React.StrictMode>)
-3. Use relevant Unsplash images: Choose appropriate photo IDs or use URLs like https://source.unsplash.com/featured/?{relevant - keyword} (e.g., ?restaurant for food sites, ?office for business, ?nature for outdoor). Avoid generic or code-related images.
+3. Use relevant Unsplash images: Choose appropriate photo IDs or use URLs like https://source.unsplash.com/featured/?{{relevant - keyword}} (e.g., ?restaurant for food sites, ?office for business, ?nature for outdoor). Avoid generic or code-related images.
 4. NO Next.js, NO TypeScript, NO CRA, NO remix. ONLY Vite + React.
 5. Import from 'lucide-react' for icons. Import from 'framer-motion' for animations.
 6. Tailwind classes from CDN config in vite.config.js.
