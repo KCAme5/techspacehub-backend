@@ -66,12 +66,13 @@ async def make_async_generator(sync_gen):
     'TypeError: async for requires an object with __aiter__ method, got map'
     """
     iterator = iter(sync_gen)
+    _sentinel = object()
     while True:
         try:
-            chunk = await sync_to_async(next, thread_sensitive=False)(iterator)
+            chunk = await sync_to_async(next, thread_sensitive=False)(iterator, _sentinel)
+            if chunk is _sentinel:
+                break
             yield chunk
-        except StopIteration:
-            break
         except Exception as e:
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
             break
