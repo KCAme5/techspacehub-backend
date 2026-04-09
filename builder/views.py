@@ -87,7 +87,7 @@ def resolve_builder_model(use_fallback_chain=False):
     if use_fallback_chain:
         return get_builder_model_fallback_chain()
     # Return strongest model only
-    return BUILDER_MODEL_FALLBACK_CHAIN[0]
+    return [BUILDER_MODEL_FALLBACK_CHAIN[0]]
 
 
 def derive_project_name(prompt):
@@ -259,7 +259,7 @@ def _allowed_new_fix_targets():
         "tailwind.config.js",
         "postcss.config.js",
     }
-    return updated_files
+
 
 
 def stream_and_persist_session(
@@ -621,80 +621,7 @@ class FixErrorView(APIView):
                 status=status.HTTP_200_OK,  # Still 200 to allow frontend to handle gracefully
             )
 
-    """
-    POST /api/builder/credits/purchase/
-    Body: { package_id, phone_number }
-    Creates a pending CreditPayment and initiates an M-Pesa STK push.
-    """
 
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        package_id = request.data.get("package_id")
-        phone_number = request.data.get("phone_number", "").strip()
-
-        if not package_id or not phone_number:
-            return Response(
-                {"error": "package_id and phone_number are required."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        package = get_object_or_404(CreditPackage, id=package_id, is_active=True)
-
-        # Normalize phone: ensure it starts with 2547
-        if phone_number.startswith("0"):
-            phone_number = "254" + phone_number[1:]
-        elif phone_number.startswith("+"):
-            phone_number = phone_number[1:]
-
-        # Create pending payment record
-        payment = CreditPayment.objects.create(
-            user=request.user,
-            package=package,
-            amount=package.price_kes,
-            credits=package.credits,
-            phone_number=phone_number,
-            status="pending",
-        )
-
-        # Initiate M-Pesa STK push
-        try:
-            payment_id_str = str(payment.id)
-            payment_ref_suffix = payment_id_str[:8].upper()
-            result = initiate_stk_push(
-                phone=phone_number,
-                amount=int(package.price_kes),
-                ref=f"CREDITS-{payment_ref_suffix}",
-                description=f"TechSpaceHub {package.credits} AI Credits",
-            )
-            logger.info(f"M-Pesa STK result for payment {payment.id}: {result}")
-
-            if "CheckoutRequestID" in result:
-                payment.mpesa_checkout_id = result["CheckoutRequestID"]
-                payment.save()
-                return Response(
-                    {
-                        "payment_id": str(payment.id),
-                        "message": "STK push sent. Check your phone.",
-                    }
-                )
-            else:
-                payment.status = "failed"
-                payment.save()
-                error_msg = (
-                    result.get("errorMessage")
-                    or result.get("CustomerMessage")
-                    or "M-Pesa initiation failed"
-                )
-                return Response(
-                    {"error": error_msg}, status=status.HTTP_400_BAD_REQUEST
-                )
-
-        except Exception as e:
-            logger.error(f"STK push error for payment {payment.id}: {e}")
-            payment.status = "failed"
-            payment.save()
-            return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class CreditPaymentStatusView(APIView):
@@ -1108,7 +1035,7 @@ class GenerateView(APIView):
             try:
                 stream = orchestrator.stream_build(
                     prompt=prompt,
-                    model_chain=model_chain,
+                    model_chain=model_name,
                     existing_files=existing_files,
                     is_chat=False,
                 )
@@ -2008,7 +1935,7 @@ class ChatView(APIView):
 
                 gen = orchestrator.stream_build(
                     prompt=user_message,
-                    model_name=model_name,
+                    model_chain=model_name,
                     existing_files=existing_files,
                     is_chat=True,
                 )

@@ -32,6 +32,7 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
         Stream generation with real-time token delivery.
         Yields SSE events immediately as they arrive from API.
         """
+        for attempt_model in self.models:
             if not self.api_key:
                 yield self._sse({"error": "OPEN_ROUTER API key missing"})
                 return
@@ -47,38 +48,38 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             model_display = attempt_model.split("/")[-1].replace(":free", "").upper()
             yield self._sse({"progress": f"Initializing {model_display}..."})
 
-        # Regex patterns
-        META_TAGS = re.compile(
-            r"<(/?)(think|thought|tool_call|description)>", re.IGNORECASE
-        )
-        FILE_MARKER = re.compile(
-            r"(?:\n|^)(?:[-=#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#]{3,})",
-            re.IGNORECASE,
-        )
-
-        try:
-            resp = requests.post(
-                self.base_url,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://techspacehub.co.ke",
-                    "X-Title": "TechSpaceHub",
-                    "Accept": "text/event-stream",
-                },
-                json={
-                    "model": attempt_model,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                    "max_tokens": 16000,
-                    "stream": True,
-                    "temperature": 0.3,
-                },
-                stream=True,
-                timeout=(30, 300),
+            # Regex patterns
+            META_TAGS = re.compile(
+                r"<(/?)(think|thought|tool_call|description)>", re.IGNORECASE
             )
+            FILE_MARKER = re.compile(
+                r"(?:\n|^)(?:[-=#]{3,}\s*)([\w./\-\\]+\.[a-zA-Z0-9]{1,10})(?:\s*[-=#]{3,})",
+                re.IGNORECASE,
+            )
+
+            try:
+                resp = requests.post(
+                        self.base_url,
+                        headers={
+                            "Authorization": f"Bearer {self.api_key}",
+                            "Content-Type": "application/json",
+                            "HTTP-Referer": "https://techspacehub.co.ke",
+                            "X-Title": "TechSpaceHub",
+                            "Accept": "text/event-stream",
+                        },
+                        json={
+                            "model": attempt_model,
+                            "messages": [
+                                {"role": "system", "content": system},
+                                {"role": "user", "content": user},
+                            ],
+                            "max_tokens": 16000,
+                            "stream": True,
+                            "temperature": 0.3,
+                        },
+                        stream=True,
+                        timeout=(30, 300),
+                    )
 
                 if not resp.ok:
                     error_text = resp.text[:500]
@@ -94,209 +95,228 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                         logger.info(f"Model {attempt_model} failed, trying next...")
                         continue
 
-            yield self._sse({"progress": "Connected - streaming..."})
+                yield self._sse({"progress": "Connected - streaming..."})
 
-            # Stream processing state
-            full_response = []  # Collects non-thinking code chunks
-            thinking_response = []  # Collects content from inside think blocks
-            in_think_block = False
-            incomplete_buffer = ""
-            detected_files = set()
-            last_progress = ""
+                # Stream processing state
+                full_response = []  # Collects non-thinking code chunks
+                thinking_response = []  # Collects content from inside think blocks
+                in_think_block = False
+                incomplete_buffer = ""
+                detected_files = set()
+                last_progress = ""
 
-            for line in resp.iter_lines(decode_unicode=True):
-                # ── HEARTBEAT: Prevent proxy buffering by yielding a space ──
-                yield " "
+                for line in resp.iter_lines(decode_unicode=True):
+                    # ── HEARTBEAT: Prevent proxy buffering by yielding a space ──
+                    yield " "
 
-                if not line:
-                    continue
-
-                if isinstance(line, bytes):
-                    line = line.decode("utf-8", errors="replace")
-
-                line = line.strip()
-                if not line.startswith("data: "):
-                    continue
-
-                data_str = line[6:].strip()
-                if data_str == "[DONE]":
-                    break
-
-                try:
-                    data = json.loads(data_str)
-                    token = (
-                        data.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                    )
-                    if not token:
+                    if not line:
                         continue
-                except (json.JSONDecodeError, KeyError, IndexError):
-                    continue
 
-                # Handle incomplete tags from previous chunk
-                if incomplete_buffer:
-                    token = incomplete_buffer + token
-                    incomplete_buffer = ""
+                    if isinstance(line, bytes):
+                        line = line.decode("utf-8", errors="replace")
 
-                # Process token
-                pos = 0
-                while pos < len(token):
-                    if in_think_block:
-                        # Look for closing tag
-                        close_match = META_TAGS.search(token[pos:])
-                        if close_match and close_match.group(1) == "/":
-                            # Found closing tag
-                            think_content = token[pos : pos + close_match.start()]
-                            if think_content:
-                                thinking_response.append(think_content)
-                                yield self._sse({"thinking": think_content})
+                    line = line.strip()
+                    if not line.startswith("data: "):
+                        continue
 
-                            in_think_block = False
-                            pos += close_match.end()
-                            yield self._sse({"progress": "Writing code..."})
-                        else:
-                            # Check for partial closing tag at end
-                            remaining = token[pos:]
-                            partial_close = remaining.rfind("</")
-                            if (
-                                partial_close != -1
-                                and len(remaining) - partial_close < 10
-                            ):
-                                incomplete_buffer = remaining[partial_close:]
-                                if partial_close > 0:
-                                    thinking_response.append(remaining[:partial_close])
-                                    yield self._sse(
-                                        {"thinking": remaining[:partial_close]}
-                                    )
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+
+                    try:
+                        data = json.loads(data_str)
+                        token = (
+                            data.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        )
+                        if not token:
+                            continue
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+
+                    # Handle incomplete tags from previous chunk
+                    if incomplete_buffer:
+                        token = incomplete_buffer + token
+                        incomplete_buffer = ""
+
+                    # Process token
+                    pos = 0
+                    while pos < len(token):
+                        if in_think_block:
+                            # Look for closing tag
+                            close_match = META_TAGS.search(token[pos:])
+                            if close_match and close_match.group(1) == "/":
+                                # Found closing tag
+                                think_content = token[pos : pos + close_match.start()]
+                                if think_content:
+                                    thinking_response.append(think_content)
+                                    yield self._sse({"thinking": think_content})
+
+                                in_think_block = False
+                                pos += close_match.end()
+                                yield self._sse({"progress": "Writing code..."})
                             else:
-                                thinking_response.append(remaining)
-                                yield self._sse({"thinking": remaining})
-                            break
-                    else:
-                        # Look for opening tag
-                        open_match = META_TAGS.search(token[pos:])
-                        if open_match and open_match.group(1) == "":
-                            # Found opening tag
-                            before_tag = token[pos : pos + open_match.start()]
-                            if before_tag:
-                                full_response.append(before_tag)
-                                yield self._sse({"chunk": before_tag})
-
-                            in_think_block = True
-                            pos += open_match.end()
-                            yield self._sse({"progress": "AI thinking..."})
+                                # Check for partial closing tag at end
+                                remaining = token[pos:]
+                                partial_close = remaining.rfind("</")
+                                if (
+                                    partial_close != -1
+                                    and len(remaining) - partial_close < 10
+                                ):
+                                    incomplete_buffer = remaining[partial_close:]
+                                    if partial_close > 0:
+                                        thinking_response.append(remaining[:partial_close])
+                                        yield self._sse(
+                                            {"thinking": remaining[:partial_close]}
+                                        )
+                                else:
+                                    thinking_response.append(remaining)
+                                    yield self._sse({"thinking": remaining})
+                                break
                         else:
-                            # Check for partial opening tag
-                            remaining = token[pos:]
-                            partial_open = remaining.rfind("<")
-                            if (
-                                partial_open != -1
-                                and len(remaining) - partial_open < 10
-                            ):
-                                # Might be start of <think>, <tool_call>, etc
-                                possible_tag = remaining[partial_open:].lower()
-                                if possible_tag in [
-                                    "<",
-                                    "<t",
-                                    "<th",
-                                    "<thi",
-                                    "<thin",
-                                    "<think",
-                                    "<to",
-                                    "<too",
-                                    "<tool",
-                                    "<tool_",
-                                    "<tool_c",
-                                ]:
-                                    incomplete_buffer = remaining[partial_open:]
-                                    if partial_open > 0:
-                                        code_part = remaining[:partial_open]
-                                        full_response.append(code_part)
-                                        yield self._sse({"chunk": code_part})
-                                    break
+                            # Look for opening tag
+                            open_match = META_TAGS.search(token[pos:])
+                            if open_match and open_match.group(1) == "":
+                                # Found opening tag
+                                before_tag = token[pos : pos + open_match.start()]
+                                if before_tag:
+                                    full_response.append(before_tag)
+                                    yield self._sse({"chunk": before_tag})
 
-                            # No tag, pure code
-                            full_response.append(remaining)
-                            yield self._sse({"chunk": remaining})
-                            break
+                                in_think_block = True
+                                pos += open_match.end()
+                                yield self._sse({"progress": "AI thinking..."})
+                            else:
+                                # Check for partial opening tag
+                                remaining = token[pos:]
+                                partial_open = remaining.rfind("<")
+                                if (
+                                    partial_open != -1
+                                    and len(remaining) - partial_open < 10
+                                ):
+                                    # Might be start of <think>, <tool_call>, etc
+                                    possible_tag = remaining[partial_open:].lower()
+                                    if possible_tag in [
+                                        "<",
+                                        "<t",
+                                        "<th",
+                                        "<thi",
+                                        "<thin",
+                                        "<think",
+                                        "<to",
+                                        "<too",
+                                        "<tool",
+                                        "<tool_",
+                                        "<tool_c",
+                                    ]:
+                                        incomplete_buffer = remaining[partial_open:]
+                                        if partial_open > 0:
+                                            code_part = remaining[:partial_open]
+                                            full_response.append(code_part)
+                                            yield self._sse({"chunk": code_part})
+                                        break
 
-                # Check for file markers in recent output — also check thinking buffer
-                # (some models output code entirely within think blocks)
-                recent_code = "".join(full_response[-1000:])
-                recent_thinking = "".join(thinking_response[-1000:])
-                recent = recent_code if recent_code.strip() else recent_thinking
-                file_matches = FILE_MARKER.findall(recent)
-                for fname in file_matches:
-                    fname_lower = fname.lower()
-                    if fname_lower not in detected_files:
-                        detected_files.add(fname_lower)
-                        action = "Editing" if is_edit else "Creating"
-                        progress_msg = f"{action} {fname_lower}..."
-                        if progress_msg != last_progress:
-                            last_progress = progress_msg
-                            yield self._sse({"progress": progress_msg})
+                                # No tag, pure code
+                                full_response.append(remaining)
+                                yield self._sse({"chunk": remaining})
+                                break
 
-            # Finalize
-            yield self._sse({"progress": "Processing files..."})
+                    # Check for file markers in recent output — also check thinking buffer
+                    # (some models output code entirely within think blocks)
+                    recent_code = "".join(full_response[-1000:])
+                    recent_thinking = "".join(thinking_response[-1000:])
+                    recent = recent_code if recent_code.strip() else recent_thinking
+                    file_matches = FILE_MARKER.findall(recent)
+                    for fname in file_matches:
+                        fname_lower = fname.lower()
+                        if fname_lower not in detected_files:
+                            detected_files.add(fname_lower)
+                            action = "Editing" if is_edit else "Creating"
+                            progress_msg = f"{action} {fname_lower}..."
+                            if progress_msg != last_progress:
+                                last_progress = progress_msg
+                                yield self._sse({"progress": progress_msg})
 
-            raw_final_text = "".join(full_response)
-            explanation = self.extract_description(raw_text=raw_final_text)
-            final_text = re.sub(
-                r"<(/?)(think|thought|tool_call|description)>",
-                "",
-                raw_final_text,
-                flags=re.IGNORECASE,
-            )
+                # Finalize
+                yield self._sse({"progress": "Processing files..."})
 
-            files = self.parse_multi_file_output(final_text)
+                raw_final_text = "".join(full_response)
+                explanation = self.extract_description(raw_text=raw_final_text)
+                final_text = re.sub(
+                    r"<(/?)(think|thought|tool_call|description)>",
+                    "",
+                    raw_final_text,
+                    flags=re.IGNORECASE,
+                )
 
-            # ── FALLBACK: if model put all code inside <think> blocks ──────────
-            # This happens with DeepSeek-based models and some OpenRouter models.
-            # If no files were parsed from the outer response, try parsing the
-            # thinking content — then re-emit those chunks as 'chunk' events so
-            # the editor receives them correctly.
-            if not files and thinking_response:
-                thinking_text = "".join(thinking_response)
-                files = self.parse_multi_file_output(thinking_text)
-                if files:
-                    logger.info(
-                        f"Fallback: parsed {len(files)} file(s) from thinking content."
-                    )
-                    # Re-emit code as chunk events so frontend editor shows the code
+                files = self.parse_multi_file_output(final_text)
+
+                # ── FALLBACK: if model put all code inside <think> blocks ──────────
+                # This happens with DeepSeek-based models and some OpenRouter models.
+                # If no files were parsed from the outer response, try parsing the
+                # thinking content — then re-emit those chunks as 'chunk' events so
+                # the editor receives them correctly.
+                if not files and thinking_response:
+                    thinking_text = "".join(thinking_response)
+                    files = self.parse_multi_file_output(thinking_text)
+                    if files:
+                        logger.info(
+                            f"Fallback: parsed {len(files)} file(s) from thinking content."
+                        )
+                        # Re-emit code as chunk events so frontend editor shows the code
+                        for f in files:
+                            marker = f"--- {f['name']} ---"
+                            # Use self._sse internally
+                            yield self._sse({"chunk": f"\n{marker}\n{f['content']}\n"})
+
+                        yield self._sse({"files": files})
+                        final_text = thinking_text
+                        explanation = explanation or self.extract_description(
+                            raw_text=thinking_text
+                        )
+
+                if not files:
+                    yield self._sse({"error": "No valid files generated"})
+                    return
+
+                if is_edit and existing_files:
+                    merged = {f["name"].lower(): f["content"] for f in existing_files}
                     for f in files:
-                        marker = f"--- {f['name']} ---"
-                        # Use self._sse internally
-                        yield self._sse({"chunk": f"\n{marker}\n{f['content']}\n"})
+                        merged[f["name"].lower()] = f["content"]
+                    files = [{"name": k, "content": v} for k, v in merged.items()]
 
+                yield self._sse({"progress": f"Complete — {len(files)} file(s) ready"})
+
+                if explanation:
+                    yield self._sse({"explanation": explanation})
+
+                if not suppress_done:
+                    yield self._sse({"done": True, "files": files})
+                else:
                     yield self._sse({"files": files})
-                    final_text = thinking_text
-                    explanation = explanation or self.extract_description(
-                        raw_text=thinking_text
-                    )
 
-            if not files:
-                yield self._sse({"error": "No valid files generated"})
-                return
-
-            if is_edit and existing_files:
-                merged = {f["name"].lower(): f["content"] for f in existing_files}
-                for f in files:
-                    merged[f["name"].lower()] = f["content"]
-                files = [{"name": k, "content": v} for k, v in merged.items()]
-
-            yield self._sse({"progress": f"Complete — {len(files)} file(s) ready"})
-
-            if explanation:
-                yield self._sse({"explanation": explanation})
-
-            if not suppress_done:
-                yield self._sse({"done": True, "files": files})
-            else:
-                yield self._sse({"files": files})
-
-        except requests.exceptions.Timeout:
-            logger.error("OpenRouter timeout")
-            yield self._sse({"error": f"Timeout. {model_display} took too long."})
-
-        except Exception as e:
-            logger.error(f"OpenRouter error: {e}", exc_info=True)
-            yield self._sse({"error": f"Generation failed: {str(e)}"})
+                # If successful, break the loop
+                break # This break applies to the 'for attempt_model' loop
+            except requests.exceptions.RequestException as e:
+                logger.error(f"OpenRouter request error for {attempt_model}: {e}")
+                if attempt_model == self.models[-1]:
+                    yield self._sse({"error": f"Request failed: {str(e)}"})
+                    return
+                else:
+                    logger.info(f"Model {attempt_model} failed, trying next...")
+                    continue
+            except requests.exceptions.Timeout:
+                logger.error(f"OpenRouter timeout for {attempt_model}")
+                if attempt_model == self.models[-1]:
+                    yield self._sse({"error": f"Timeout. {model_display} took too long."})
+                    return
+                else:
+                    logger.info(f"Model {attempt_model} failed, trying next...")
+                    continue
+            except Exception as e:
+                logger.error(f"OpenRouter generation error for {attempt_model}: {e}")
+                if attempt_model == self.models[-1]:
+                    yield self._sse({"error": f"Generation failed: {str(e)}"})
+                    return
+                else:
+                    logger.info(f"Model {attempt_model} failed, trying next...")
+                    continue
