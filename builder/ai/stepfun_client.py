@@ -84,15 +84,20 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
                 if not resp.ok:
                     error_text = resp.text[:500]
                     logger.error(f"OpenRouter HTTP {resp.status_code} for {attempt_model}: {error_text}")
+                    
+                    # 429 = rate limited — always try next model, never fail hard
+                    if resp.status_code == 429:
+                        logger.info(f"Model {attempt_model} rate-limited (429), trying next...")
+                        continue
+                    
                     if attempt_model == self.models[-1]:
-                        # Last model failed
+                        # Last model also failed
                         yield self._sse(
                             {"error": f"API Error {resp.status_code}: {error_text}"}
                         )
                         return
                     else:
-                        # Try next model
-                        logger.info(f"Model {attempt_model} failed, trying next...")
+                        logger.info(f"Model {attempt_model} failed ({resp.status_code}), trying next...")
                         continue
 
                 yield self._sse({"progress": "Connected - streaming..."})

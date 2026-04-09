@@ -1043,8 +1043,8 @@ class GenerateView(APIView):
             credits_used=10,
         )
 
-        # Get the primary (strongest) model - no user override
-        model_name = resolve_builder_model(use_fallback_chain=False)
+        # Use the full fallback chain so if a model hits rate limits, the next one is tried
+        model_name = resolve_builder_model(use_fallback_chain=True)
 
         def stream_response():
             """Generator yielding SSE events via AgentOrchestrator."""
@@ -1955,8 +1955,8 @@ class ChatView(APIView):
             user_preferences=session.user_preferences
         )
 
-        # Get the primary (strongest) model - no user override
-        model_name = resolve_builder_model(use_fallback_chain=False)
+        # Use the full fallback chain so if a model hits rate limits, the next one is tried
+        model_name = resolve_builder_model(use_fallback_chain=True)
 
         def stream_response():
             try:
