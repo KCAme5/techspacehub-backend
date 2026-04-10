@@ -31,10 +31,14 @@ class RuntimeProviderTestCase(TestCase):
 
         self.assertEqual(bundle.provider, "webcontainer")
         self.assertEqual(bundle.runtime_status, "prepared")
-        self.assertEqual(
-            bundle.payload["commands"]["install"],
-            ["npm", "install", "--no-fund", "--no-audit", "--progress=false"],
-        )
+        install_command = bundle.payload["commands"]["install"]
+        self.assertEqual(install_command[0:2], ["npm", "install"])
+        self.assertIn("--no-fund", install_command)
+        self.assertIn("--no-audit", install_command)
+        self.assertIn("--progress=false", install_command)
+        self.assertIn("--cache", install_command)
+        self.assertIn("/tmp/.npm", install_command)
+        self.assertIn("--package-lock=false", install_command)
         self.assertEqual(bundle.payload["preview"]["port"], 4173)
 
 

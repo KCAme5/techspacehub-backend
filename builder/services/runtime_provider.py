@@ -35,8 +35,9 @@ class WebContainerRuntimeProvider(BaseRuntimeProvider):
                 "--legacy-peer-deps",
                 "--loglevel=error",
                 "--prefer-offline",
-                "--cache-dir",
+                "--cache",
                 "/tmp/.npm",
+                "--package-lock=false",
                 "--ignore-scripts",
             ]
             dev_command = [

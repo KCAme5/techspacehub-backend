@@ -21,11 +21,23 @@ class ErrorFixer:
         "openai/gpt-oss-120b:free",
     ]
 
+    GENERIC_FIX_TARGETS = {
+        "file.js",
+        "app.js",
+        "main.js",
+        "src/main.js",
+        "src/main.ts",
+        "src/main.tsx",
+        "component.jsx",
+        "src/components/component.jsx",
+        "unknown",
+    }
+
     AI_FIX_PROMPT = """You are an expert web developer helping fix code errors.
 
 Given the error message and code context below, provide ONLY a valid JSON response with NO additional text, NO markdown, NO preamble:
 
-{{"explanation": "Brief root cause", "fixed_code": "corrected code snippet", "files_to_update": ["file.js"], "alternative": "alternate fix if applicable"}}
+{{"explanation": "Brief root cause", "fixed_code": "corrected code snippet", "files_to_update": ["{file_path}"], "alternative": "alternate fix if applicable"}}
 
 Error: {error_message}
 Language: {language}
@@ -37,7 +49,7 @@ Code Context:
 RESPOND WITH ONLY THE JSON OBJECT:"""
 
     def __init__(self):
-        self.api_key = os.getenv("OPENROUTER_API_KEY")
+        self.api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPEN_ROUTER")
         self.api_base = "https://openrouter.ai/api/v1"
         self.primary_model = os.getenv("ERROR_FIXER_MODEL", "minimax/minimax-m2.5:free")
         self.current_model = self.primary_model
@@ -65,7 +77,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return None
 
         # 1. Try pattern-based fixes first (free, instant)
-        heuristic_fix = self._get_heuristic_fix(error_message, code_snippet)
+        heuristic_fix = self._get_heuristic_fix(error_message, code_snippet, file_path)
         if heuristic_fix:
             logger.info(f"Using heuristic fix for: {error_message[:60]}")
             return heuristic_fix
@@ -76,7 +88,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
         )
 
     def _get_heuristic_fix(
-        self, error_message: str, code_snippet: str
+        self, error_message: str, code_snippet: str, file_path: str = ""
     ) -> Optional[Dict[str, Any]]:
         """
         Quick heuristic fixes for common errors without API cost.
@@ -89,13 +101,14 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             Fix dict or None if no pattern matches
         """
         error_lower = error_message.lower()
+        preferred_target = self._preferred_fix_target(file_path)
 
         # Cannot read property of undefined
         if "cannot read property" in error_lower or "undefined" in error_lower:
             return {
                 "explanation": "The object is undefined. Use optional chaining to safely access properties.",
                 "fixed_code": "// Use optional chaining:\nconst result = obj?.property ?? defaultValue;",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         # Cannot read property of null
@@ -103,7 +116,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "The object is null. Check if it exists before accessing.",
                 "fixed_code": "// Add null check:\nif (obj !== null && obj !== undefined) {\n  obj.method();\n}",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         # is not a function
@@ -111,7 +124,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "The variable is not a function. Ensure it's defined as a function.",
                 "fixed_code": "// Ensure it's a function:\nif (typeof myFunc === 'function') {\n  myFunc();\n}",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         # is not defined (ReferenceError)
@@ -119,7 +132,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "Variable is used before declaration or has a typo. Check variable names.",
                 "fixed_code": "// Declare the variable:\nlet myVariable = value;  // or const myVariable = value;",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         # Unexpected token (SyntaxError)
@@ -127,7 +140,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "Syntax error - likely missing brace, parenthesis, or semicolon.",
                 "fixed_code": "// Check for missing: }\n// Check for missing: )\n// Check for missing: ;",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         # Objects are not valid as React child
@@ -135,7 +148,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "Can't render objects or promises directly in JSX. Extract the data you need.",
                 "fixed_code": "// Don't: <div>{object}</div>\n// Do: <div>{object.property}</div>",
-                "files_to_update": ["src/components/Component.jsx"],
+                "files_to_update": [preferred_target],
             }
 
         # Module not found / import error
@@ -151,7 +164,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "Object has duplicate property keys. Remove the duplicate.",
                 "fixed_code": "// Remove duplicate key:\nconst obj = {\n  name: 'value',\n  // name: 'duplicate'  <- REMOVE THIS\n};",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         # Whitespace issues
@@ -159,7 +172,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             return {
                 "explanation": "Indentation error. Use consistent spacing (2 or 4 spaces, not tabs).",
                 "fixed_code": "// Fix indentation:\nif (true) {\n  // 2 space indent\n  doSomething();\n}",
-                "files_to_update": ["src/main.js"],
+                "files_to_update": [preferred_target],
             }
 
         return None
@@ -249,7 +262,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
                     "temperature": 0.2,
                     "max_tokens": 2000,
                 },
-                timeout=30,
+                timeout=(10, 20),
             )
 
             if response.status_code != 200:
@@ -276,7 +289,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
                 )
                 return None
 
-            return fix_data
+            return self._normalize_fix_data(fix_data, file_path)
 
         except requests.exceptions.Timeout:
             logger.warning(f"Timeout with model {model}")
@@ -335,6 +348,38 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
         # 5. Last resort: try to extract JSON keys/values
         logger.error(f"Failed to extract JSON from: {cleaned[:300]}")
         return None
+
+    def _preferred_fix_target(self, file_path: str) -> str:
+        normalized = self._normalize_fix_target(file_path)
+        return normalized or "src/app.jsx"
+
+    def _normalize_fix_data(
+        self, fix_data: Dict[str, Any], preferred_file_path: str
+    ) -> Dict[str, Any]:
+        normalized_fix = dict(fix_data or {})
+        preferred_target = self._preferred_fix_target(preferred_file_path)
+        raw_targets = normalized_fix.get("files_to_update") or []
+
+        normalized_targets = []
+        for target in raw_targets:
+            normalized_target = self._normalize_fix_target(target)
+            if not normalized_target or normalized_target in self.GENERIC_FIX_TARGETS:
+                normalized_target = preferred_target
+            if normalized_target not in normalized_targets:
+                normalized_targets.append(normalized_target)
+
+        if not normalized_targets:
+            normalized_targets = [preferred_target]
+
+        normalized_fix["files_to_update"] = normalized_targets
+        return normalized_fix
+
+    @staticmethod
+    def _normalize_fix_target(path: str) -> str:
+        candidate = (path or "").replace("\\", "/").strip().lower()
+        if not candidate or candidate in {"unknown", "file.js"}:
+            return ""
+        return candidate
 
 
 def get_error_fixer() -> ErrorFixer:
