@@ -36,11 +36,63 @@ class OpenRouterBuilderClient(BaseWebsiteGenerator):
             models if models else
             ([model] if model else _get_default_chain())
         )
+        self.model = self.models[0] if self.models else None
         self.base_url = "https://openrouter.ai/api/v1/chat/completions"
 
     def _sse(self, payload):
         """Format as SSE data line."""
         return f"data: {json.dumps(payload)}\n\n"
+
+    def create_chat_completion(
+        self,
+        messages,
+        model=None,
+        temperature=0,
+        max_tokens=250,
+    ):
+        """
+        Execute a non-streaming OpenRouter chat completion and return the text content.
+        """
+        if not self.api_key:
+            raise ValueError("OPEN_ROUTER API key missing")
+
+        response = requests.post(
+            self.base_url,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://techspacehub.co.ke",
+                "X-Title": "TechSpaceHub",
+            },
+            json={
+                "model": model or self.model or "openrouter/auto",
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "stream": False,
+            },
+            timeout=(30, 120),
+        )
+        response.raise_for_status()
+
+        payload = response.json()
+        choices = payload.get("choices") or []
+        if not choices:
+            raise ValueError("OpenRouter returned no choices")
+
+        message = choices[0].get("message") or {}
+        content = message.get("content", "")
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+            content = "".join(parts)
+
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("OpenRouter returned empty content")
+
+        return content.strip()
 
     def stream_generation(
         self, prompt, existing_files=None, output_type="react", suppress_done=False

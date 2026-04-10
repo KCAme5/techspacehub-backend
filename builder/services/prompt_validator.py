@@ -254,13 +254,15 @@ Respond with ONLY valid JSON:
         return route
 
     def _call_classifier(self, prompt: str) -> dict:
-        response = self.client.client.chat.completions.create(
-            model="openrouter/auto",
+        response_text = self.client.create_chat_completion(
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_tokens=250,
         )
-        response_text = response.choices[0].message.content.strip()
+        if response_text.startswith("```"):
+            response_text = response_text.strip("`")
+            if response_text.lower().startswith("json"):
+                response_text = response_text[4:].strip()
         parsed = json.loads(response_text)
         return {
             "intent": parsed.get("intent", "unclear"),

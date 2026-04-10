@@ -59,6 +59,24 @@ class PromptIntentRouterTestCase(TestCase):
         self.assertEqual(result["intent"], "fix_error")
         self.assertTrue(result["should_generate"])
 
+    @patch("builder.services.prompt_validator.OpenRouterBuilderClient.create_chat_completion")
+    def test_classifier_parses_fenced_json_from_openrouter_helper(self, mock_completion):
+        mock_completion.return_value = """```json
+{
+  "intent": "general_help",
+  "reason": "User is asking a question.",
+  "response": "I can explain how the builder works.",
+  "suggestion": "Ask me to build a landing page when you're ready.",
+  "should_generate": false
+}
+```"""
+
+        result = self.validator._call_classifier("How does this builder work?")
+
+        self.assertEqual(result["intent"], "general_help")
+        self.assertFalse(result["should_generate"])
+        self.assertIn("builder works", result["response"].lower())
+
 
 class BuilderIntentEndpointTestCase(TestCase):
     def setUp(self):
