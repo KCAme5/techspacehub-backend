@@ -38,7 +38,8 @@ class ErrorExtractor:
             re.IGNORECASE,
         ),
         "SyntaxError": re.compile(
-            r"(?:Syntax|Parse)\s*Error:?\s*(.+?)(?:\s+at|$)", re.IGNORECASE
+            r"(?:(?:Syntax|Parse)\s*Error:?|Unexpected token|Unterminated regular expression|Unexpected end of input)\s*(.+?)(?:\s+at|$)",
+            re.IGNORECASE,
         ),
         "TypeError": re.compile(
             r"TypeError:?\s*(.+?)(?:\s+at|$)", re.IGNORECASE
@@ -120,7 +121,10 @@ class ErrorExtractor:
 
         # If no specific error type found, check if it's any other error
         if not error_info.is_valid:
-            if any(keyword in first_line.lower() for keyword in ["error", "exception", "failed"]):
+            if any(
+                keyword in first_line.lower()
+                for keyword in ["error", "exception", "failed", "unexpected token", "does not provide an export"]
+            ):
                 error_info.error_type = "UnknownError"
                 error_info.message = first_line[:200]
                 error_info.is_obvious_error = False
@@ -141,7 +145,17 @@ class ErrorExtractor:
             error_info.language = "react"
 
         # Extract file path if present
-        file_match = re.search(r"at\s+([^(\s]+\.(?:js|jsx|tsx?|css|html))", error_message, re.IGNORECASE)
+        file_match = re.search(
+            r"((?:/|[a-zA-Z]:\\|[.\w-]+/)[^:\s]+\.(?:js|jsx|tsx?|css|html|json))",
+            error_message,
+            re.IGNORECASE,
+        )
+        if not file_match:
+            file_match = re.search(
+                r"at\s+([^(\s]+\.(?:js|jsx|tsx?|css|html|json))",
+                error_message,
+                re.IGNORECASE,
+            )
         if file_match:
             error_info.file_path = file_match.group(1)
 

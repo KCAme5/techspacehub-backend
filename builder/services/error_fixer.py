@@ -76,7 +76,7 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
         if not error_message:
             return None
 
-        # 1. Try pattern-based fixes first (free, instant)
+        # 1. Try pattern-based fixes first for narrow, low-risk cases only.
         heuristic_fix = self._get_heuristic_fix(error_message, code_snippet, file_path)
         if heuristic_fix:
             logger.info(f"Using heuristic fix for: {error_message[:60]}")
@@ -101,79 +101,55 @@ RESPOND WITH ONLY THE JSON OBJECT:"""
             Fix dict or None if no pattern matches
         """
         error_lower = error_message.lower()
-        preferred_target = self._preferred_fix_target(file_path)
+        # Avoid destructive placeholder rewrites for syntax/build failures.
+        if any(
+            token in error_lower
+            for token in [
+                "unexpected token",
+                "syntaxerror",
+                "parse error",
+                "failed to resolve import",
+                "does not provide an export",
+                "internal server error",
+            ]
+        ):
+            return None
 
         # Cannot read property of undefined
         if "cannot read property" in error_lower or "undefined" in error_lower:
-            return {
-                "explanation": "The object is undefined. Use optional chaining to safely access properties.",
-                "fixed_code": "// Use optional chaining:\nconst result = obj?.property ?? defaultValue;",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # Cannot read property of null
         if "cannot read" in error_lower and "null" in error_lower:
-            return {
-                "explanation": "The object is null. Check if it exists before accessing.",
-                "fixed_code": "// Add null check:\nif (obj !== null && obj !== undefined) {\n  obj.method();\n}",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # is not a function
         if "is not a function" in error_lower:
-            return {
-                "explanation": "The variable is not a function. Ensure it's defined as a function.",
-                "fixed_code": "// Ensure it's a function:\nif (typeof myFunc === 'function') {\n  myFunc();\n}",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # is not defined (ReferenceError)
         if "is not defined" in error_lower:
-            return {
-                "explanation": "Variable is used before declaration or has a typo. Check variable names.",
-                "fixed_code": "// Declare the variable:\nlet myVariable = value;  // or const myVariable = value;",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # Unexpected token (SyntaxError)
         if "unexpected token" in error_lower:
-            return {
-                "explanation": "Syntax error - likely missing brace, parenthesis, or semicolon.",
-                "fixed_code": "// Check for missing: }\n// Check for missing: )\n// Check for missing: ;",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # Objects are not valid as React child
         if "react child" in error_lower or ("object" in error_lower and "not valid" in error_lower):
-            return {
-                "explanation": "Can't render objects or promises directly in JSX. Extract the data you need.",
-                "fixed_code": "// Don't: <div>{object}</div>\n// Do: <div>{object.property}</div>",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # Module not found / import error
         if "module not found" in error_lower or "cannot find module" in error_lower:
-            return {
-                "explanation": "Module/dependency is not installed or import path is incorrect.",
-                "fixed_code": "// Check:\n// 1. npm install the package\n// 2. Verify import path matches exported name",
-                "files_to_update": ["package.json"],
-            }
+            return None
 
         # Duplicate key in object
         if "duplicate" in error_lower and "key" in error_lower:
-            return {
-                "explanation": "Object has duplicate property keys. Remove the duplicate.",
-                "fixed_code": "// Remove duplicate key:\nconst obj = {\n  name: 'value',\n  // name: 'duplicate'  <- REMOVE THIS\n};",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         # Whitespace issues
         if "unexpected indent" in error_lower or "indentation" in error_lower:
-            return {
-                "explanation": "Indentation error. Use consistent spacing (2 or 4 spaces, not tabs).",
-                "fixed_code": "// Fix indentation:\nif (true) {\n  // 2 space indent\n  doSomething();\n}",
-                "files_to_update": [preferred_target],
-            }
+            return None
 
         return None
 

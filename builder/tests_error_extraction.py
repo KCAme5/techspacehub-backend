@@ -131,6 +131,14 @@ class ErrorExtractionTestCase(TestCase):
         self.assertIsNotNone(result.file_path)
         self.assertIn("Button.", result.file_path or "")
 
+    def test_extract_vite_unexpected_token_overlay_error(self):
+        error_msg = "[plugin:vite:react-babel] /home/demo/src/App.jsx: Unexpected token (106:1)"
+        result = self.extractor.extract(error_msg)
+
+        self.assertEqual(result.error_type, "SyntaxError")
+        self.assertTrue(result.is_blocking)
+        self.assertEqual(result.file_path, "/home/demo/src/App.jsx")
+
     def test_error_info_has_all_required_fields(self):
         """Verify ErrorInfo object has all necessary fields."""
         error_msg = "TypeError: Property 'x' is undefined"
