@@ -235,21 +235,44 @@ def _apply_fix_to_session_files(files, fix_data, preferred_file_path=""):
 
     chosen_path = next((path for path in target_files if path), "")
     fixed_code = fix_data.get("fixed_code", "")
-    if not chosen_path or not fixed_code:
+    if not fixed_code:
         return None
+
+    # No chosen path — default to the main component file
+    if not chosen_path:
+        chosen_path = "src/app.jsx"
 
     chosen_path = _normalize_fix_target_path(chosen_path)
     if not chosen_path:
         return None
 
+    # 1. Try exact match first
     for file_data in updated_files:
         if file_data.get("name", "").lower() == chosen_path:
             file_data["content"] = fixed_code
             return updated_files
 
+    # 2. Try basename match (e.g. "App.jsx" → finds "src/app.jsx")
+    chosen_basename = chosen_path.split("/")[-1]
+    for file_data in updated_files:
+        existing_basename = file_data.get("name", "").lower().split("/")[-1]
+        if existing_basename == chosen_basename:
+            file_data["content"] = fixed_code
+            return updated_files
+
+    # 3. Allowed new file targets
     if chosen_path in _allowed_new_fix_targets():
         updated_files.append({"name": chosen_path, "content": fixed_code})
         return updated_files
+
+    # 4. Last resort — apply to src/app.jsx if it exists in the session
+    for file_data in updated_files:
+        if file_data.get("name", "").lower() in ("src/app.jsx", "app.jsx"):
+            logger.warning(
+                f"auto-fix: target '{chosen_path}' not found; applying to {file_data['name']}"
+            )
+            file_data["content"] = fixed_code
+            return updated_files
 
     return None
 
